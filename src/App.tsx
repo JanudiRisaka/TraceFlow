@@ -1,5 +1,23 @@
 
+import { useState } from 'react'
+import Editor from '@monaco-editor/react'
 import './App.css'
+
+const initialCode = `let score = 10
+let bonus = 5
+
+function calculateTotal(a, b) {
+  let total = a + b
+  return total
+}
+
+let result = calculateTotal(score, bonus)
+console.log(result)`
+
+type CodeEditorPanelProps = {
+  code: string
+  onCodeChange: (value: string) => void
+}
 
 function Header() {
   return (
@@ -25,19 +43,8 @@ function Header() {
   )
 }
 
-function CodeEditorPanel() {
-  const sampleCode = [
-    'let score = 10',
-    'let bonus = 5',
-    '',
-    'function calculateTotal(a, b) {',
-    '  let total = a + b',
-    '  return total',
-    '}',
-    '',
-    'let result = calculateTotal(score, bonus)',
-    'console.log(result)',
-  ]
+function CodeEditorPanel({ code, onCodeChange }: CodeEditorPanelProps) {
+  const lineCount = code.split('\n').length
 
   return (
     <section className="panel editor-panel">
@@ -47,20 +54,35 @@ function CodeEditorPanel() {
       </div>
 
       <div className="editor-content">
-        <div className="line-numbers" aria-hidden="true">
-          {sampleCode.map((_, index) => (
-            <span key={index}>{index + 1}</span>
-          ))}
+        <div className="monaco-container">
+          <Editor
+            height="100%"
+            language="javascript"
+            theme="vs-dark"
+            value={code}
+            onChange={(value) => onCodeChange(value ?? '')}
+            options={{
+              ariaLabel: 'JavaScript code editor',
+              automaticLayout: true,
+              fontSize: 13,
+              fontFamily: "Consolas, 'Courier New', monospace",
+              lineNumbers: 'on',
+              minimap: { enabled: false },
+              scrollBeyondLastLine: false,
+              tabSize: 2,
+              wordWrap: 'off',
+              padding: {
+                top: 14,
+                bottom: 14,
+              },
+            }}
+          />
         </div>
-
-        <pre className="code-content">
-          <code>{sampleCode.join('\n')}</code>
-        </pre>
       </div>
 
       <div className="panel-footer">
         <span>JavaScript</span>
-        <span>10 lines</span>
+        <span>{lineCount} lines</span>
       </div>
     </section>
   )
@@ -121,13 +143,18 @@ function OutputPanel() {
 }
 
 function App() {
+  const [code, setCode] = useState<string>(initialCode)
+
   return (
     <div className="app-shell">
       <Header />
 
       <main className="workspace">
         <div className="left-column">
-          <CodeEditorPanel />
+          <CodeEditorPanel
+            code={code}
+            onCodeChange={setCode}
+          />
           <OutputPanel />
         </div>
 
