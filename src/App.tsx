@@ -1,121 +1,147 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+
 import './App.css'
 
-function App() {
-  const [count, setCount] = useState(0)
+function Header() {
+  return (
+    <header className="app-header">
+      <div className="brand">
+        <div className="brand-icon">T</div>
+        <div>
+          <h1>TraceFlow</h1>
+          <p>JavaScript execution visualizer</p>
+        </div>
+      </div>
+
+      <div className="header-actions">
+        <span className="file-name">untitled.js</span>
+        <button className="button button-secondary" type="button" disabled>
+          Reset
+        </button>
+        <button className="button button-primary" type="button" disabled>
+          ▶ Run
+        </button>
+      </div>
+    </header>
+  )
+}
+
+function CodeEditorPanel() {
+  const sampleCode = [
+    'let score = 10',
+    'let bonus = 5',
+    '',
+    'function calculateTotal(a, b) {',
+    '  let total = a + b',
+    '  return total',
+    '}',
+    '',
+    'let result = calculateTotal(score, bonus)',
+    'console.log(result)',
+  ]
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.tsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <section className="panel editor-panel">
+      <div className="panel-header">
+        <h2>Code editor</h2>
+        <span className="panel-label">JavaScript</span>
+      </div>
 
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
+      <div className="editor-content">
+        <div className="line-numbers" aria-hidden="true">
+          {sampleCode.map((_, index) => (
+            <span key={index}>{index + 1}</span>
+          ))}
         </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+        <pre className="code-content">
+          <code>{sampleCode.join('\n')}</code>
+        </pre>
+      </div>
+
+      <div className="panel-footer">
+        <span>JavaScript</span>
+        <span>10 lines</span>
+      </div>
+    </section>
+  )
+}
+
+function ExecutionPanel() {
+  return (
+    <section className="panel execution-panel">
+      <div className="panel-header">
+        <h2>Execution trace</h2>
+        <span className="status-badge">Not started</span>
+      </div>
+
+      <div className="empty-state">
+        <div className="empty-icon">▷</div>
+        <h3>No execution yet</h3>
+        <p>Run your JavaScript code to see its execution step by step.</p>
+      </div>
+
+      <div className="timeline-controls">
+        <button type="button" disabled aria-label="Previous step">◀</button>
+        <span>Step 0 of 0</span>
+        <button type="button" disabled aria-label="Next step">▶</button>
+      </div>
+    </section>
+  )
+}
+
+function VariablesPanel() {
+  return (
+    <section className="panel variables-panel">
+      <div className="panel-header">
+        <h2>Variables</h2>
+        <span className="panel-label">Current state</span>
+      </div>
+
+      <div className="empty-state compact">
+        <p>Variables will appear here during execution.</p>
+      </div>
+    </section>
+  )
+}
+
+function OutputPanel() {
+  return (
+    <section className="panel output-panel">
+      <div className="panel-header">
+        <h2>Output</h2>
+        <span className="panel-label">Console</span>
+      </div>
+
+      <div className="output-content">
+        <span className="output-prompt">&gt;</span>
+        <span>Waiting for execution...</span>
+      </div>
+    </section>
+  )
+}
+
+function App() {
+  return (
+    <div className="app-shell">
+      <Header />
+
+      <main className="workspace">
+        <div className="left-column">
+          <CodeEditorPanel />
+          <OutputPanel />
+        </div>
+
+        <div className="right-column">
+          <ExecutionPanel />
+          <VariablesPanel />
+        </div>
+      </main>
+
+      <footer className="app-footer">
+        <span>TraceFlow</span>
+        <span>JavaScript visualizer · Early development</span>
+      </footer>
+    </div>
   )
 }
 
