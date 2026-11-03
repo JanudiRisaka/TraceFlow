@@ -129,4 +129,113 @@ it('rejects duplicate declarations in the same environment', () => {
       executeSource('score = 10;')
     }).toThrow('Variable "score" is not defined.')
   })
+
+  it('executes the if branch when the condition is true', () => {
+  const environment = executeSource(`
+    let result = "";
+    if (10 > 5) {
+      result = "true branch";
+    } else {
+      result = "false branch";
+    }
+  `)
+
+  expect(environment.get('result')).toEqual({
+    type: 'string',
+    value: 'true branch',
+  })
+})
+
+it('executes the else branch when the condition is false', () => {
+  const environment = executeSource(`
+    let result = "";
+    if (10 < 5) {
+      result = "true branch";
+    } else {
+      result = "false branch";
+    }
+  `)
+
+  expect(environment.get('result')).toEqual({
+    type: 'string',
+    value: 'false branch',
+  })
+})
+
+it('does not execute either branch when false and there is no else', () => {
+  const environment = executeSource(`
+    let result = "unchanged";
+
+    if (false) {
+      result = "changed";
+    }
+  `)
+
+  expect(environment.get('result')).toEqual({
+    type: 'string',
+    value: 'unchanged',
+  })
+})
+
+it('supports nested if statements', () => {
+  const environment = executeSource(`
+    let result = "";
+
+    if (true) {
+      if (false) {
+        result = "wrong";
+      } else {
+        result = "correct";
+      }
+    }
+  `)
+
+  expect(environment.get('result')).toEqual({
+    type: 'string',
+    value: 'correct',
+  })
+})
+
+it('keeps block-scoped variables inside their block', () => {
+  const environment = executeSource(`
+    if (true) {
+      let message = "inside";
+    }
+  `)
+
+    expect(() => environment.get('message')).toThrow(
+    'Variable "message" is not defined.',
+    )
+})
+
+it('allows a block variable to shadow an outer variable', () => {
+  const environment = executeSource(`
+    let message = "outside";
+
+    if (true) {
+      let message = "inside";
+    }
+  `)
+
+  expect(environment.get('message')).toEqual({
+    type: 'string',
+    value: 'outside',
+  })
+ })
+
+ it('allows a block to modify an outer variable', () => {
+  const environment = executeSource(`
+    let score = 10;
+
+    if (true) {
+      score = 20;
+    }
+  `)
+
+  expect(environment.get('score')).toEqual({
+    type: 'number',
+    value: 20,
+  })
+})
+
 })

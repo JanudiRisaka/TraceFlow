@@ -1,7 +1,7 @@
 
 import type { Expression, Statement } from 'acorn'
 import { Environment, RuntimeError } from './Environment'
-import { evaluateExpression } from './evaluate'
+import { evaluateExpression, isTruthy } from './evaluate'
 import { createUndefined } from './value'
 
 type AstNode = {
@@ -84,6 +84,35 @@ export function executeStatement(
       evaluateExpression(statement.expression, environment)
       return
     }
+
+case 'BlockStatement': {
+  const blockEnvironment = new Environment(environment)
+
+  for (const bodyStatement of statement.body) {
+    executeStatement(bodyStatement, blockEnvironment)
+  }
+
+  return
+}
+
+  case 'IfStatement': {
+  const condition = evaluateExpression(statement.test, environment)
+
+  if (isTruthy(condition)) {
+    if (statement.consequent === undefined) {
+      throw new RuntimeError(
+        'The if statement has no consequent.',
+        'UNSUPPORTED_EXPRESSION',
+      )
+    }
+
+    executeStatement(statement.consequent, environment)
+  } else if (statement.alternate !== null && statement.alternate !== undefined) {
+    executeStatement(statement.alternate, environment)
+  }
+
+  return
+}
 
     default:
       throw new RuntimeError(

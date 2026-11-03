@@ -60,8 +60,8 @@ function getString(value: RuntimeValue): string {
   }
 }
 
-function isTruthy(value: RuntimeValue): boolean {
-  switch (value.type) {
+export function isTruthy(value: RuntimeValue): boolean {
+    switch (value.type) {
     case 'boolean':
       return value.value
     case 'number':
