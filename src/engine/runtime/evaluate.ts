@@ -292,6 +292,34 @@ export function evaluateExpression(
       }
     }
 
+
+    case 'AssignmentExpression': {
+      if (node.operator !== '=') {
+        throw new RuntimeError(
+          `Unsupported assignment operator "${String(node.operator)}".`,
+          'UNSUPPORTED_OPERATOR',
+        )
+      }
+
+      const left = node.left as AstExpression
+
+      if (left.type !== 'Identifier' || typeof left.name !== 'string') {
+        throw new RuntimeError(
+          'Assignments must target a variable identifier.',
+          'UNSUPPORTED_EXPRESSION',
+        )
+      }
+
+      const value = evaluateExpression(
+        node.right as Expression,
+        environment,
+      )
+
+      environment.assign(left.name, value)
+
+      return value
+    }
+
     default:
       throw new RuntimeError(
         `Expression "${node.type}" is not supported yet.`,
