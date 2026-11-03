@@ -135,4 +135,23 @@ describe('Environment', () => {
       child.assign('name', createString('Other'))
     }).toThrow('Assignment to constant variable "name".')
   })
+
+  it('returns only bindings declared in its own scope', () => {
+  const parent = new Environment()
+  parent.declare('total', 'let')
+  parent.initialize('total', createNumber(10))
+
+  const child = new Environment(parent)
+  child.declare('count', 'const')
+  child.initialize('count', createNumber(3))
+
+  expect(child.getOwnBindings()).toEqual([
+    {
+      name: 'count',
+      value: createNumber(3),
+      mutable: false,
+      initialized: true,
+    },
+  ])
+})
 })

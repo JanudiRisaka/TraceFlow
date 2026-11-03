@@ -12,6 +12,13 @@ type Binding = {
   initialized: boolean
 }
 
+export type OwnBinding = {
+  name: string
+  value: RuntimeValue
+  mutable: boolean
+  initialized: boolean
+}
+
 export type RuntimeErrorCode =
   | 'DUPLICATE_DECLARATION'
   | 'UNDECLARED_VARIABLE'
@@ -37,6 +44,17 @@ export class Environment {
   private readonly bindings = new Map<string, Binding>()
 
   public readonly parent: Environment | null
+
+  getOwnBindings(): OwnBinding[] {
+    return Array.from(this.bindings.entries()).map(
+      ([name, binding]) => ({
+        name,
+        value: binding.value,
+        mutable: binding.mutable,
+        initialized: binding.initialized,
+      }),
+    )
+  }
 
   constructor(parent: Environment | null = null) {
     this.parent = parent
