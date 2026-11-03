@@ -292,6 +292,42 @@ export function evaluateExpression(
       }
     }
 
+        case 'UpdateExpression': {
+      if (node.operator !== '++' && node.operator !== '--') {
+        throw new RuntimeError(
+          `Unsupported update operator "${String(node.operator)}".`,
+          'UNSUPPORTED_OPERATOR',
+        )
+      }
+
+      const argument = node.argument as AstExpression
+
+      if (
+        argument.type !== 'Identifier' ||
+        typeof argument.name !== 'string'
+      ) {
+        throw new RuntimeError(
+          'Update expressions must target a variable identifier.',
+          'UNSUPPORTED_EXPRESSION',
+        )
+      }
+
+      const previousValue = environment.get(argument.name)
+      const previousNumber = getNumber(previousValue)
+
+      const updatedNumber =
+        node.operator === '++'
+          ? previousNumber + 1
+          : previousNumber - 1
+
+      const updatedValue = createNumber(updatedNumber)
+
+      environment.assign(argument.name, updatedValue)
+
+      return node.prefix
+        ? updatedValue
+        : createNumber(previousNumber)
+    }
 
     case 'AssignmentExpression': {
       if (node.operator !== '=') {

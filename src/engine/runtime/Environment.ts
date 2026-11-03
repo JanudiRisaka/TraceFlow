@@ -21,6 +21,7 @@ export type RuntimeErrorCode =
   | 'INVALID_OPERAND_TYPES'
   | 'UNSUPPORTED_EXPRESSION'
   | 'UNSUPPORTED_OPERATOR'
+  | 'EXECUTION_LIMIT_EXCEEDED'
 
 export class RuntimeError extends Error {
   public readonly code: RuntimeErrorCode

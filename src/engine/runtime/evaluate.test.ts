@@ -4,6 +4,10 @@ import { parseJavaScript } from '../parser/parse'
 import { Environment, RuntimeError } from './Environment'
 import { evaluateExpression } from './evaluate'
 import type { RuntimeValue } from './value'
+import { parse } from 'acorn'
+import type { Expression } from 'acorn'
+import { createNumber } from './value'
+
 
 function evaluate(source: string): RuntimeValue {
   const parsed = parseJavaScript(source)
@@ -22,6 +26,24 @@ function evaluate(source: string): RuntimeValue {
     statement.expression,
     new Environment(),
   )
+}
+
+function parseExpression(source: string): Expression {
+  const program = parse(source, {
+    ecmaVersion: 'latest',
+    sourceType: 'script',
+  })
+
+  const statement = program.body[0]
+
+  if (
+    statement === undefined ||
+    statement.type !== 'ExpressionStatement'
+  ) {
+    throw new Error('Expected an expression.')
+  }
+
+  return statement.expression
 }
 
 describe('evaluateExpression', () => {
@@ -180,41 +202,97 @@ describe('evaluateExpression', () => {
     })
   })
 
-  it('returns false when comparing undefined with a number', () => {
-  const environment = new Environment()
-  environment.declare('missing', 'let')
-  environment.initialize('missing', {
-    type: 'undefined',
-  })
-
-  const parsed = parseJavaScript('missing > 0')
-
-  if (parsed.ok === false) {
-    throw new Error('Invalid test expression.')
-  }
-
-  const statement = parsed.ast.body[0]
-
-  if (!statement || statement.type !== 'ExpressionStatement') {
-    throw new Error('Expected expression statement.')
-  }
-
-  expect(
-    evaluateExpression(statement.expression, environment),
-  ).toEqual({
-    type: 'boolean',
-    value: false,
+    it('returns false when comparing undefined with a number', () => {
+    const environment = new Environment()
+    environment.declare('missing', 'let')
+    environment.initialize('missing', {
+        type: 'undefined',
     })
- })
 
-it('returns false when comparing NaN with a number', () => {
-  expect(evaluate('"not a number" * 2 < 10')).toEqual({
-    type: 'boolean',
-    value: false,
+    const parsed = parseJavaScript('missing > 0')
+
+    if (parsed.ok === false) {
+        throw new Error('Invalid test expression.')
+    }
+
+    const statement = parsed.ast.body[0]
+
+    if (!statement || statement.type !== 'ExpressionStatement') {
+        throw new Error('Expected expression statement.')
+    }
+
+    expect(
+        evaluateExpression(statement.expression, environment),
+    ).toEqual({
+        type: 'boolean',
+        value: false,
+        })
+    })
+
+    it('returns false when comparing NaN with a number', () => {
+    expect(evaluate('"not a number" * 2 < 10')).toEqual({
+        type: 'boolean',
+        value: false,
+    })
+    })
+
+    it('throws for undeclared variables', () => {
+        expect(() => evaluate('unknownVariable')).toThrow(RuntimeError)
+    })
+
+      it('supports postfix increment', () => {
+    const environment = new Environment()
+    environment.declare('count', 'let')
+    environment.initialize('count', createNumber(5))
+
+    const result = evaluateExpression(
+      parseExpression('count++'),
+      environment,
+    )
+
+    expect(result).toEqual(createNumber(5))
+    expect(environment.get('count')).toEqual(createNumber(6))
   })
-})
 
-  it('throws for undeclared variables', () => {
-    expect(() => evaluate('unknownVariable')).toThrow(RuntimeError)
+  it('supports prefix increment', () => {
+    const environment = new Environment()
+    environment.declare('count', 'let')
+    environment.initialize('count', createNumber(5))
+
+    const result = evaluateExpression(
+      parseExpression('++count'),
+      environment,
+    )
+
+    expect(result).toEqual(createNumber(6))
+    expect(environment.get('count')).toEqual(createNumber(6))
+  })
+
+  it('supports postfix decrement', () => {
+    const environment = new Environment()
+    environment.declare('count', 'let')
+    environment.initialize('count', createNumber(5))
+
+    const result = evaluateExpression(
+      parseExpression('count--'),
+      environment,
+    )
+
+    expect(result).toEqual(createNumber(5))
+    expect(environment.get('count')).toEqual(createNumber(4))
+  })
+
+  it('supports prefix decrement', () => {
+    const environment = new Environment()
+    environment.declare('count', 'let')
+    environment.initialize('count', createNumber(5))
+
+    const result = evaluateExpression(
+      parseExpression('--count'),
+      environment,
+    )
+
+    expect(result).toEqual(createNumber(4))
+    expect(environment.get('count')).toEqual(createNumber(4))
   })
 })

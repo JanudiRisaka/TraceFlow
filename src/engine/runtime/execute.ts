@@ -4,6 +4,20 @@ import { Environment, RuntimeError } from './Environment'
 import { evaluateExpression, isTruthy } from './evaluate'
 import { createUndefined } from './value'
 
+export type ExecutionContext = {
+  loopIterations: number
+  maxLoopIterations: number
+}
+
+const DEFAULT_MAX_LOOP_ITERATIONS = 10_000
+
+export function createExecutionContext(): ExecutionContext {
+  return {
+    loopIterations: 0,
+    maxLoopIterations: DEFAULT_MAX_LOOP_ITERATIONS,
+  }
+}
+
 type AstNode = {
   type: string
   [key: string]: unknown
@@ -31,6 +45,7 @@ function isAstNode(value: unknown): value is AstNode {
 export function executeStatement(
   statement: Statement,
   environment: Environment,
+  context: ExecutionContext = createExecutionContext(),
 ): void {
   switch (statement.type) {
     case 'VariableDeclaration': {
@@ -89,8 +104,7 @@ case 'BlockStatement': {
   const blockEnvironment = new Environment(environment)
 
   for (const bodyStatement of statement.body) {
-    executeStatement(bodyStatement, blockEnvironment)
-  }
+    executeStatement(bodyStatement, blockEnvironment, context)  }
 
   return
 }
@@ -106,13 +120,59 @@ case 'BlockStatement': {
       )
     }
 
-    executeStatement(statement.consequent, environment)
+    executeStatement(statement.consequent, environment, context)
   } else if (statement.alternate !== null && statement.alternate !== undefined) {
-    executeStatement(statement.alternate, environment)
+    executeStatement(statement.alternate, environment, context)
   }
 
   return
 }
+
+    case 'ForStatement': {
+      const loopEnvironment = new Environment(environment)
+
+      // Execute the initializer once, if one exists.
+      if (statement.init !== null && statement.init !== undefined) {
+        if (statement.init.type === 'VariableDeclaration') {
+          executeStatement(statement.init, loopEnvironment, context)
+        } else {
+          evaluateExpression(statement.init, loopEnvironment)
+        }
+      }
+
+      // A missing condition means the loop continues indefinitely,
+      // until the execution limit stops it.
+      while (
+        statement.test === null ||
+        statement.test === undefined ||
+        isTruthy(evaluateExpression(statement.test, loopEnvironment))
+      ) {
+        if (context.loopIterations >= context.maxLoopIterations) {
+          throw new RuntimeError(
+            `Execution stopped: the loop iteration limit of ${context.maxLoopIterations} was reached.`,
+            'EXECUTION_LIMIT_EXCEEDED',
+          )
+        }
+
+        context.loopIterations += 1
+
+        if (statement.body === undefined) {
+          throw new RuntimeError(
+            'The for loop has no body.',
+            'UNSUPPORTED_EXPRESSION',
+          )
+        }
+
+        executeStatement(statement.body, loopEnvironment, context)
+
+        // Execute the update expression, if one exists.
+        if (statement.update !== null && statement.update !== undefined) {
+          evaluateExpression(statement.update, loopEnvironment)
+        }
+      }
+
+      return
+    }
 
     default:
       throw new RuntimeError(

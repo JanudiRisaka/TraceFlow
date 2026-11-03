@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { parseJavaScript } from '../parser/parse'
 import { Environment } from './Environment'
-import { executeStatement } from './execute'
+import { createExecutionContext, executeStatement } from './execute'
 
 function executeSource(source: string, environment = new Environment()) {
   const parsed = parseJavaScript(source)
@@ -11,18 +11,20 @@ function executeSource(source: string, environment = new Environment()) {
     throw new Error(`Invalid test JavaScript: ${parsed.error.message}`)
   }
 
-for (const statement of parsed.ast.body) {
-  if (
-    statement.type === 'ImportDeclaration' ||
-    statement.type === 'ExportNamedDeclaration' ||
-    statement.type === 'ExportDefaultDeclaration' ||
-    statement.type === 'ExportAllDeclaration'
-  ) {
-    throw new Error('Module declarations are not supported.')
-  }
+  const context = createExecutionContext()
 
-  executeStatement(statement, environment)
-}
+  for (const statement of parsed.ast.body) {
+    if (
+      statement.type === 'ImportDeclaration' ||
+      statement.type === 'ExportNamedDeclaration' ||
+      statement.type === 'ExportDefaultDeclaration' ||
+      statement.type === 'ExportAllDeclaration'
+    ) {
+      throw new Error('Module declarations are not supported.')
+    }
+
+    executeStatement(statement, environment, context)
+  }
 
   return environment
 }
@@ -236,6 +238,83 @@ it('allows a block variable to shadow an outer variable', () => {
     type: 'number',
     value: 20,
   })
+})
+
+  it('throws when the loop iteration limit is reached', () => {
+    const environment = new Environment()
+    const parsed = parseJavaScript(`
+      for (;;) {
+      }
+    `)
+
+    if (parsed.ok === false) {
+      throw new Error(parsed.error.message)
+    }
+
+    const context = {
+      loopIterations: 0,
+      maxLoopIterations: 3,
+    }
+
+    expect(() => {
+      for (const statement of parsed.ast.body) {
+        if (
+          statement.type === 'ImportDeclaration' ||
+          statement.type === 'ExportNamedDeclaration' ||
+          statement.type === 'ExportDefaultDeclaration' ||
+          statement.type === 'ExportAllDeclaration'
+        ) {
+          throw new Error('Module declarations are not supported.')
+        }
+
+        executeStatement(statement, environment, context)
+      }
+    }).toThrow('loop iteration limit of 3 was reached')
+  })
+
+  it('shares the iteration limit across nested loops', () => {
+  const environment = new Environment()
+  const parsed = parseJavaScript(`
+    for (let i = 0; i < 2; i++) {
+      for (let j = 0; j < 2; j++) {
+      }
+    }
+  `)
+
+  if (parsed.ok === false) {
+    throw new Error(parsed.error.message)
+  }
+
+  const context = {
+    loopIterations: 0,
+    maxLoopIterations: 3,
+  }
+
+  expect(() => {
+    for (const statement of parsed.ast.body) {
+      if (
+        statement.type === 'ImportDeclaration' ||
+        statement.type === 'ExportNamedDeclaration' ||
+        statement.type === 'ExportDefaultDeclaration' ||
+        statement.type === 'ExportAllDeclaration'
+      ) {
+        throw new Error('Module declarations are not supported.')
+      }
+
+      executeStatement(statement, environment, context)
+    }
+  }).toThrow('loop iteration limit of 3 was reached')
+})
+
+  it('keeps the for loop initializer variable inside the loop scope', () => {
+  const environment = executeSource(`
+    for (let i = 0; i < 3; i++) {
+    }
+  `)
+
+  expect(() => environment.get('i')).toThrow(
+    'Variable "i" is not defined.',
+  )
 })
 
 })
