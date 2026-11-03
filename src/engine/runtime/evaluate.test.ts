@@ -1,0 +1,220 @@
+
+import { describe, expect, it } from 'vitest'
+import { parseJavaScript } from '../parser/parse'
+import { Environment, RuntimeError } from './Environment'
+import { evaluateExpression } from './evaluate'
+import type { RuntimeValue } from './value'
+
+function evaluate(source: string): RuntimeValue {
+  const parsed = parseJavaScript(source)
+
+  if (parsed.ok === false) {
+    throw new Error('Invalid JavaScript in test.')
+  }
+
+  const statement = parsed.ast.body[0]
+
+  if (!statement || statement.type !== 'ExpressionStatement') {
+    throw new Error('Expected an expression statement.')
+  }
+
+  return evaluateExpression(
+    statement.expression,
+    new Environment(),
+  )
+}
+
+describe('evaluateExpression', () => {
+  it('evaluates number literals', () => {
+    expect(evaluate('42')).toEqual({
+      type: 'number',
+      value: 42,
+    })
+  })
+
+  it('evaluates string literals', () => {
+    expect(evaluate('"TraceFlow"')).toEqual({
+      type: 'string',
+      value: 'TraceFlow',
+    })
+  })
+
+  it('evaluates boolean literals', () => {
+    expect(evaluate('true')).toEqual({
+      type: 'boolean',
+      value: true,
+    })
+  })
+
+  it('evaluates null literals', () => {
+    expect(evaluate('null')).toEqual({
+      type: 'null',
+    })
+  })
+
+  it('evaluates addition', () => {
+    expect(evaluate('10 + 5')).toEqual({
+      type: 'number',
+      value: 15,
+    })
+  })
+
+  it('evaluates string concatenation', () => {
+    expect(evaluate('"Hello " + "World"')).toEqual({
+      type: 'string',
+      value: 'Hello World',
+    })
+  })
+
+  it('evaluates subtraction', () => {
+    expect(evaluate('10 - 5')).toEqual({
+      type: 'number',
+      value: 5,
+    })
+  })
+
+  it('evaluates multiplication', () => {
+    expect(evaluate('4 * 5')).toEqual({
+      type: 'number',
+      value: 20,
+    })
+  })
+
+  it('evaluates division', () => {
+    expect(evaluate('10 / 2')).toEqual({
+      type: 'number',
+      value: 5,
+    })
+  })
+
+  it('evaluates remainder', () => {
+    expect(evaluate('10 % 3')).toEqual({
+      type: 'number',
+      value: 1,
+    })
+  })
+
+  it('evaluates comparison operators', () => {
+    expect(evaluate('10 > 5')).toEqual({
+      type: 'boolean',
+      value: true,
+    })
+
+    expect(evaluate('10 === 5')).toEqual({
+      type: 'boolean',
+      value: false,
+    })
+  })
+
+  it('evaluates unary operators', () => {
+    expect(evaluate('!true')).toEqual({
+      type: 'boolean',
+      value: false,
+    })
+
+    expect(evaluate('-10')).toEqual({
+      type: 'number',
+      value: -10,
+    })
+  })
+
+  it('evaluates expressions using environment variables', () => {
+    const parsed = parseJavaScript('score + 5')
+
+    if (parsed.ok === false) {
+      throw new Error('Invalid test expression.')
+    }
+
+    const environment = new Environment()
+    environment.declare('score', 'let')
+    environment.initialize('score', {
+      type: 'number',
+      value: 10,
+    })
+
+    const statement = parsed.ast.body[0]
+
+    if (!statement || statement.type !== 'ExpressionStatement') {
+      throw new Error('Expected expression statement.')
+    }
+
+    expect(
+      evaluateExpression(statement.expression, environment),
+    ).toEqual({
+      type: 'number',
+      value: 15,
+    })
+  })
+
+  it('uses JavaScript primitive conversion for multiplication', () => {
+    expect(evaluate('"10" * 2')).toEqual({
+      type: 'number',
+      value: 20,
+    })
+  })
+
+  it('evaluates loose equality for null and undefined', () => {
+    const environment = new Environment()
+    environment.declare('missing', 'let')
+    environment.initialize('missing', {
+      type: 'undefined',
+    })
+
+    const parsed = parseJavaScript('null == missing')
+
+    if (parsed.ok === false) {
+      throw new Error('Invalid test expression.')
+    }
+
+    const statement = parsed.ast.body[0]
+
+    if (!statement || statement.type !== 'ExpressionStatement') {
+      throw new Error('Expected expression statement.')
+    }
+
+    expect(
+      evaluateExpression(statement.expression, environment),
+    ).toEqual({
+      type: 'boolean',
+      value: true,
+    })
+  })
+
+  it('returns false when comparing undefined with a number', () => {
+  const environment = new Environment()
+  environment.declare('missing', 'let')
+  environment.initialize('missing', {
+    type: 'undefined',
+  })
+
+  const parsed = parseJavaScript('missing > 0')
+
+  if (parsed.ok === false) {
+    throw new Error('Invalid test expression.')
+  }
+
+  const statement = parsed.ast.body[0]
+
+  if (!statement || statement.type !== 'ExpressionStatement') {
+    throw new Error('Expected expression statement.')
+  }
+
+  expect(
+    evaluateExpression(statement.expression, environment),
+  ).toEqual({
+    type: 'boolean',
+    value: false,
+    })
+ })
+
+it('returns false when comparing NaN with a number', () => {
+  expect(evaluate('"not a number" * 2 < 10')).toEqual({
+    type: 'boolean',
+    value: false,
+  })
+})
+
+  it('throws for undeclared variables', () => {
+    expect(() => evaluate('unknownVariable')).toThrow(RuntimeError)
+  })
+})

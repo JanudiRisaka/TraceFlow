@@ -18,6 +18,9 @@ export type RuntimeErrorCode =
   | 'TEMPORAL_DEAD_ZONE'
   | 'CONST_ASSIGNMENT'
   | 'ALREADY_INITIALIZED'
+  | 'INVALID_OPERAND_TYPES'
+  | 'UNSUPPORTED_EXPRESSION'
+  | 'UNSUPPORTED_OPERATOR'
 
 export class RuntimeError extends Error {
   public readonly code: RuntimeErrorCode
