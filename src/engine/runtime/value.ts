@@ -1,3 +1,11 @@
+import type { FunctionDeclaration } from 'acorn'
+import type { Environment } from './Environment'
+
+export type FunctionRuntimeValue = {
+  type: 'function'
+  declaration: FunctionDeclaration
+  closure: Environment
+}
 
 export type RuntimeValue =
   | { type: 'number'; value: number }
@@ -5,6 +13,7 @@ export type RuntimeValue =
   | { type: 'boolean'; value: boolean }
   | { type: 'null' }
   | { type: 'undefined' }
+  | FunctionRuntimeValue
 
 export function createNumber(value: number): RuntimeValue {
   return { type: 'number', value }
@@ -24,4 +33,15 @@ export function createNull(): RuntimeValue {
 
 export function createUndefined(): RuntimeValue {
   return { type: 'undefined' }
+}
+
+export function createFunction(
+  declaration: FunctionDeclaration,
+  closure: Environment,
+): RuntimeValue {
+  return {
+    type: 'function',
+    declaration,
+    closure,
+  }
 }

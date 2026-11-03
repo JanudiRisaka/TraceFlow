@@ -1,20 +1,34 @@
 
 import type { Expression, Statement } from 'acorn'
 import { Environment, RuntimeError } from './Environment'
-import { evaluateExpression, isTruthy } from './evaluate'
-import { createUndefined } from './value'
+import {
+  evaluateExpression,
+  isTruthy,
+  type FunctionInvoker,
+} from './evaluate'
+import {
+  createFunction,
+  createUndefined,
+  type RuntimeValue,
+  type FunctionRuntimeValue,
+} from './value'
 
 export type ExecutionContext = {
   loopIterations: number
   maxLoopIterations: number
+  functionCallDepth: number
+  maxFunctionCallDepth: number
 }
 
 const DEFAULT_MAX_LOOP_ITERATIONS = 10_000
+const DEFAULT_MAX_FUNCTION_CALL_DEPTH = 100
 
 export function createExecutionContext(): ExecutionContext {
   return {
     loopIterations: 0,
     maxLoopIterations: DEFAULT_MAX_LOOP_ITERATIONS,
+    functionCallDepth: 0,
+    maxFunctionCallDepth: DEFAULT_MAX_FUNCTION_CALL_DEPTH,
   }
 }
 
@@ -42,11 +56,81 @@ function isAstNode(value: unknown): value is AstNode {
   )
 }
 
+export class ReturnSignal {
+  public readonly value: RuntimeValue
+
+  constructor(value: RuntimeValue) {
+    this.value = value
+  }
+}
+
+function invokeFunction(
+  fn: FunctionRuntimeValue,
+  args: RuntimeValue[],
+  context: ExecutionContext,
+): RuntimeValue {
+  if (context.functionCallDepth >= context.maxFunctionCallDepth) {
+    throw new RuntimeError(
+      `Execution stopped: the function call depth limit of ${context.maxFunctionCallDepth} was reached.`,
+      'EXECUTION_LIMIT_EXCEEDED',
+    )
+  }
+
+  context.functionCallDepth += 1
+
+  try {
+    const functionEnvironment = new Environment(fn.closure)
+
+    // Initialize function parameters.
+    for (let index = 0; index < fn.declaration.params.length; index += 1) {
+      const parameter = fn.declaration.params[index]
+
+      if (parameter.type !== 'Identifier') {
+        throw new RuntimeError(
+          'Only simple identifier parameters are supported.',
+          'UNSUPPORTED_EXPRESSION',
+        )
+      }
+
+      const parameterName = parameter.name
+
+      functionEnvironment.declare(parameterName, 'let')
+
+      functionEnvironment.initialize(
+        parameterName,
+        args[index] ?? createUndefined(),
+      )
+    }
+
+    try {
+      executeStatement(
+        fn.declaration.body,
+        functionEnvironment,
+        context,
+      )
+    } catch (error: unknown) {
+      if (error instanceof ReturnSignal) {
+        return error.value
+      }
+
+      throw error
+    }
+
+    // A function without an explicit return produces undefined.
+    return createUndefined()
+  } finally {
+    context.functionCallDepth -= 1
+  }
+}
+
 export function executeStatement(
   statement: Statement,
   environment: Environment,
   context: ExecutionContext = createExecutionContext(),
 ): void {
+  const callFunction: FunctionInvoker = (fn, args) =>
+    invokeFunction(fn, args, context)
+
   switch (statement.type) {
     case 'VariableDeclaration': {
       const declaration =
@@ -87,7 +171,7 @@ export function executeStatement(
 
         const value = item.init === null
           ? createUndefined()
-          : evaluateExpression(item.init, environment)
+          : evaluateExpression(item.init, environment, callFunction)
 
         environment.initialize(name, value)
       }
@@ -96,37 +180,41 @@ export function executeStatement(
     }
 
     case 'ExpressionStatement': {
-      evaluateExpression(statement.expression, environment)
-      return
+    evaluateExpression(
+        statement.expression,
+        environment,
+        callFunction,
+        )
+        return
     }
 
-case 'BlockStatement': {
-  const blockEnvironment = new Environment(environment)
+    case 'BlockStatement': {
+    const blockEnvironment = new Environment(environment)
 
-  for (const bodyStatement of statement.body) {
-    executeStatement(bodyStatement, blockEnvironment, context)  }
+    for (const bodyStatement of statement.body) {
+        executeStatement(bodyStatement, blockEnvironment, context)  }
 
-  return
-}
-
-  case 'IfStatement': {
-  const condition = evaluateExpression(statement.test, environment)
-
-  if (isTruthy(condition)) {
-    if (statement.consequent === undefined) {
-      throw new RuntimeError(
-        'The if statement has no consequent.',
-        'UNSUPPORTED_EXPRESSION',
-      )
+    return
     }
 
-    executeStatement(statement.consequent, environment, context)
-  } else if (statement.alternate !== null && statement.alternate !== undefined) {
-    executeStatement(statement.alternate, environment, context)
-  }
+    case 'IfStatement': {
+    const condition = evaluateExpression(statement.test, environment)
 
-  return
-}
+    if (isTruthy(condition)) {
+        if (statement.consequent === undefined) {
+        throw new RuntimeError(
+            'The if statement has no consequent.',
+            'UNSUPPORTED_EXPRESSION',
+        )
+        }
+
+        executeStatement(statement.consequent, environment, context)
+    } else if (statement.alternate !== null && statement.alternate !== undefined) {
+        executeStatement(statement.alternate, environment, context)
+    }
+
+    return
+    }
 
     case 'ForStatement': {
       const loopEnvironment = new Environment(environment)
@@ -172,6 +260,38 @@ case 'BlockStatement': {
       }
 
       return
+    }
+
+    case 'FunctionDeclaration': {
+    if (statement.id === null) {
+        throw new RuntimeError(
+        'Function declarations must have a name.',
+        'UNSUPPORTED_EXPRESSION',
+        )
+    }
+
+    const functionName = statement.id.name
+
+    environment.declare(functionName, 'let')
+
+    const functionValue = createFunction(statement, environment)
+
+    environment.initialize(functionName, functionValue)
+
+    return
+    }
+
+    case 'ReturnStatement': {
+        const value =
+        statement.argument === null || statement.argument === undefined
+            ? createUndefined()
+            : evaluateExpression(
+              statement.argument,
+              environment,
+              callFunction,
+            )
+
+        throw new ReturnSignal(value)
     }
 
     default:

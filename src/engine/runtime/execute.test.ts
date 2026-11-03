@@ -2,16 +2,21 @@
 import { describe, expect, it } from 'vitest'
 import { parseJavaScript } from '../parser/parse'
 import { Environment } from './Environment'
-import { createExecutionContext, executeStatement } from './execute'
+import {
+    createExecutionContext,
+    executeStatement,
+    ReturnSignal,
+} from './execute'
+import type { Statement } from 'acorn'
 
-function executeSource(source: string, environment = new Environment()) {
+function executeSource(source: string, environment = new Environment(), context = createExecutionContext(),) {
   const parsed = parseJavaScript(source)
 
   if (parsed.ok === false) {
     throw new Error(`Invalid test JavaScript: ${parsed.error.message}`)
   }
 
-  const context = createExecutionContext()
+  context.maxLoopIterations = 3
 
   for (const statement of parsed.ast.body) {
     if (
@@ -251,11 +256,8 @@ it('allows a block variable to shadow an outer variable', () => {
       throw new Error(parsed.error.message)
     }
 
-    const context = {
-      loopIterations: 0,
-      maxLoopIterations: 3,
-    }
-
+    const context = createExecutionContext()
+context.maxLoopIterations = 3
     expect(() => {
       for (const statement of parsed.ast.body) {
         if (
@@ -285,11 +287,8 @@ it('allows a block variable to shadow an outer variable', () => {
     throw new Error(parsed.error.message)
   }
 
-  const context = {
-    loopIterations: 0,
-    maxLoopIterations: 3,
-  }
-
+    const context = createExecutionContext()
+context.maxLoopIterations = 3
   expect(() => {
     for (const statement of parsed.ast.body) {
       if (
@@ -316,5 +315,223 @@ it('allows a block variable to shadow an outer variable', () => {
     'Variable "i" is not defined.',
   )
 })
+
+it('registers a function declaration in the environment', () => {
+  const environment = new Environment()
+  const result = parseJavaScript(`
+    function greet() {
+      return "Hello"
+    }
+  `)
+
+  if (result.ok === false) {
+    throw new Error(result.error.message)
+  }
+
+  executeStatement(result.ast.body[0] as Statement, environment)
+
+  const functionValue = environment.get('greet')
+
+  expect(functionValue.type).toBe('function')
+})
+
+it('stores the original declaration in the function value', () => {
+  const environment = new Environment()
+  const result = parseJavaScript(`
+    function greet() {
+      return "Hello"
+    }
+  `)
+
+  if (result.ok === false) {
+    throw new Error(result.error.message)
+  }
+
+  executeStatement(result.ast.body[0] as Statement, environment)
+
+  const functionValue = environment.get('greet')
+
+  expect(functionValue.type).toBe('function')
+
+  if (functionValue.type === 'function') {
+    expect(functionValue.declaration.id?.name).toBe('greet')
+  }
+})
+
+it('throws a return signal containing the returned value', () => {
+  const environment = new Environment()
+  const parsed = parseJavaScript(`
+    function test() {
+      return 42;
+    }
+  `)
+
+  if (parsed.ok === false) {
+    throw new Error(parsed.error.message)
+  }
+
+  const functionDeclaration = parsed.ast.body[0]
+
+  if (functionDeclaration.type !== 'FunctionDeclaration') {
+    throw new Error('Expected a function declaration.')
+  }
+
+  const returnStatement = functionDeclaration.body.body[0]
+
+  try {
+    executeStatement(returnStatement, environment)
+    throw new Error('Expected a ReturnSignal.')
+  } catch (error: unknown) {
+    expect(error).toBeInstanceOf(ReturnSignal)
+
+    if (error instanceof ReturnSignal) {
+      expect(error.value).toEqual({
+        type: 'number',
+        value: 42,
+      })
+    }
+  }
+})
+
+it('returns undefined when no return expression is provided', () => {
+  const environment = new Environment()
+  const parsed = parseJavaScript(`
+    function test() {
+      return;
+    }
+  `)
+
+  if (parsed.ok === false) {
+    throw new Error(parsed.error.message)
+  }
+
+  const functionDeclaration = parsed.ast.body[0]
+
+  if (functionDeclaration.type !== 'FunctionDeclaration') {
+    throw new Error('Expected a function declaration.')
+  }
+
+  const returnStatement = functionDeclaration.body.body[0]
+
+  try {
+    executeStatement(returnStatement, environment)
+    throw new Error('Expected a ReturnSignal.')
+  } catch (error: unknown) {
+    expect(error).toBeInstanceOf(ReturnSignal)
+
+    if (error instanceof ReturnSignal) {
+      expect(error.value).toEqual({ type: 'undefined' })
+    }
+  }
+})
+
+  it('calls a function with two arguments and returns the result', () => {
+    const environment = executeSource(`
+      function add(a, b) {
+        return a + b;
+      }
+
+      let result = add(2, 3);
+    `)
+
+    expect(environment.get('result')).toEqual({
+      type: 'number',
+      value: 5,
+    })
+  })
+
+  it('returns undefined when a function has no return statement', () => {
+    const environment = executeSource(`
+      function greet() {
+        let message = "Hello";
+      }
+
+      let result = greet();
+    `)
+
+    expect(environment.get('result')).toEqual({
+      type: 'undefined',
+    })
+  })
+
+  it('returns undefined for a missing function argument', () => {
+    const environment = executeSource(`
+      function getValue(value) {
+        return value;
+      }
+
+      let result = getValue();
+    `)
+
+    expect(environment.get('result')).toEqual({
+      type: 'undefined',
+    })
+  })
+
+  it('supports calling one function from another', () => {
+    const environment = executeSource(`
+      function double(value) {
+        return value * 2;
+      }
+
+      function calculate(value) {
+        return double(value) + 1;
+      }
+
+      let result = calculate(5);
+    `)
+
+    expect(environment.get('result')).toEqual({
+      type: 'number',
+      value: 11,
+    })
+  })
+
+  it('supports recursive function calls', () => {
+    const environment = executeSource(`
+      function factorial(n) {
+        if (n <= 1) {
+          return 1;
+        }
+
+        return n * factorial(n - 1);
+      }
+
+      let result = factorial(5);
+    `)
+
+    expect(environment.get('result')).toEqual({
+      type: 'number',
+      value: 120,
+    })
+  })
+
+  it('rejects attempts to call a non-function value', () => {
+    expect(() => {
+      executeSource(`
+        let value = 10;
+        value();
+      `)
+    }).toThrow('Only user-defined functions can be called.')
+  })
+
+  it('enforces the function call depth limit', () => {
+    const context = createExecutionContext()
+    context.maxFunctionCallDepth = 3
+
+    expect(() => {
+      executeSource(
+        `
+          function recurse() {
+            return recurse();
+          }
+
+          recurse();
+        `,
+        new Environment(),
+        context,
+      )
+    }).toThrow('function call depth limit of 3 was reached')
+  })
 
 })

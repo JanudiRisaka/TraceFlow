@@ -7,7 +7,13 @@ import {
   createNumber,
   createString,
   type RuntimeValue,
+  type FunctionRuntimeValue,
 } from './value'
+
+export type FunctionInvoker = (
+  fn: FunctionRuntimeValue,
+  args: RuntimeValue[],
+) => RuntimeValue
 
 type AstExpression = {
   type: string
@@ -42,6 +48,11 @@ function getNumber(value: RuntimeValue): number {
       return 0
     case 'undefined':
       return Number.NaN
+    case 'function':
+    throw new RuntimeError(
+      'Cannot convert a function value to a number.',
+      'INVALID_OPERAND_TYPES',
+    )
   }
 }
 
@@ -57,6 +68,11 @@ function getString(value: RuntimeValue): string {
       return 'null'
     case 'undefined':
       return 'undefined'
+    case 'function':
+    throw new RuntimeError(
+      'Cannot convert a function value to a string.',
+      'INVALID_OPERAND_TYPES',
+    )
   }
 }
 
@@ -71,6 +87,8 @@ export function isTruthy(value: RuntimeValue): boolean {
     case 'null':
     case 'undefined':
       return false
+    case 'function':
+      return true
   }
 }
 
@@ -84,6 +102,10 @@ function strictEqual(
 
   if (left.type === 'null' || left.type === 'undefined') {
     return true
+  }
+
+  if (left.type === 'function' && right.type === 'function') {
+    return left === right
   }
 
   if (
@@ -214,6 +236,7 @@ function evaluateBinaryExpression(
 export function evaluateExpression(
   expression: Expression,
   environment: Environment,
+  invokeFunction?: FunctionInvoker,
 ): RuntimeValue {
   const node = asExpression(expression)
 
@@ -247,11 +270,13 @@ export function evaluateExpression(
       const left = evaluateExpression(
         node.left as Expression,
         environment,
+        invokeFunction,
       )
 
       const right = evaluateExpression(
         node.right as Expression,
         environment,
+        invokeFunction,
       )
 
       if (typeof node.operator !== 'string') {
@@ -270,9 +295,10 @@ export function evaluateExpression(
 
     case 'UnaryExpression': {
       const argument = evaluateExpression(
-        node.argument as Expression,
-        environment,
-      )
+            node.argument as Expression,
+            environment,
+            invokeFunction,
+        )
 
       switch (node.operator) {
         case '!':
@@ -349,12 +375,43 @@ export function evaluateExpression(
       const value = evaluateExpression(
         node.right as Expression,
         environment,
-      )
+        invokeFunction,
+        )
 
       environment.assign(left.name, value)
 
       return value
     }
+
+    case 'CallExpression': {
+  if (invokeFunction === undefined) {
+    throw new RuntimeError(
+      'Function invocation is not available in this execution context.',
+      'UNSUPPORTED_EXPRESSION',
+    )
+  }
+
+  const callee = evaluateExpression(
+    node.callee as Expression,
+    environment,
+    invokeFunction,
+  )
+
+  if (callee.type !== 'function') {
+    throw new RuntimeError(
+      'Only user-defined functions can be called.',
+      'INVALID_OPERAND_TYPES',
+    )
+  }
+
+  const argumentsList = node.arguments as Expression[]
+
+  const args = argumentsList.map((argument) =>
+    evaluateExpression(argument, environment, invokeFunction),
+  )
+
+  return invokeFunction(callee, args)
+}
 
     default:
       throw new RuntimeError(
