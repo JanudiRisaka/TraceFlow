@@ -8,6 +8,7 @@ import {
     ReturnSignal,
 } from './execute'
 import type { Statement } from 'acorn'
+import type { ExecutionEvent } from '../trace/types'
 
 function executeSource(source: string, environment = new Environment(), context = createExecutionContext(),) {
   const parsed = parseJavaScript(source)
@@ -33,6 +34,37 @@ function executeSource(source: string, environment = new Environment(), context 
 
   return environment
 }
+
+
+function executeSourceWithContext(
+  source: string,
+  environment = new Environment(),
+  context = createExecutionContext(),
+) {
+  const parsed = parseJavaScript(source)
+
+  if (parsed.ok === false) {
+    throw new Error(`Invalid test JavaScript: ${parsed.error.message}`)
+  }
+
+  context.maxLoopIterations = 3
+
+  for (const statement of parsed.ast.body) {
+    if (
+      statement.type === 'ImportDeclaration' ||
+      statement.type === 'ExportNamedDeclaration' ||
+      statement.type === 'ExportDefaultDeclaration' ||
+      statement.type === 'ExportAllDeclaration'
+    ) {
+      throw new Error('Module declarations are not supported.')
+    }
+
+    executeStatement(statement, environment, context)
+  }
+
+  return { environment, context }
+}
+
 
 describe('executeStatement', () => {
   it('declares and initializes a let variable', () => {
@@ -751,4 +783,156 @@ it('records each for loop iteration', () => {
     return null
   })).toEqual([1, 2, 3])
 })
+
+})
+
+
+describe('function execution tracing', () => {
+  it('records function call and return events', () => {
+    const { context } = executeSourceWithContext(`
+      function add(a, b) {
+        return a + b;
+      }
+
+      let result = add(2, 3);
+    `)
+
+    const events = context.eventRecorder.getEvents()
+
+    const functionEvents = events.filter(
+      (event: ExecutionEvent) =>
+        event.type === 'function-call' ||
+        event.type === 'function-return',
+    )
+
+    expect(functionEvents).toHaveLength(2)
+
+    expect(functionEvents[0]).toMatchObject({
+      type: 'function-call',
+      functionName: 'add',
+      frameId: 1,
+    })
+
+    expect(functionEvents[1]).toMatchObject({
+      type: 'function-return',
+      functionName: 'add',
+      frameId: 1,
+      value: { type: 'number', value: 5 },
+    })
+  })
+
+  it('captures the active call stack in function snapshots', () => {
+    const { context } = executeSourceWithContext(`
+      function greet() {
+        return 42;
+      }
+
+      greet();
+    `)
+
+    const events = context.eventRecorder.getEvents()
+    const snapshots = context.snapshotRecorder.getSnapshots()
+
+    const callEvent = events.find(
+      (event) => event.type === 'function-call',
+    )
+
+    expect(callEvent).toBeDefined()
+
+    if (callEvent === undefined) {
+      throw new Error('Expected a function-call event.')
+    }
+
+    const callSnapshot = snapshots[callEvent.index]
+
+    expect(callSnapshot.callStack).toHaveLength(1)
+    expect(callSnapshot.callStack[0].functionName).toBe('greet')
+  })
+
+  it('records implicit undefined returns', () => {
+    const { context } = executeSourceWithContext(`
+      function greet() {
+        let message = 1;
+      }
+
+      greet();
+    `)
+
+    const returnEvent = context.eventRecorder
+      .getEvents()
+      .find((event) => event.type === 'function-return')
+
+    expect(returnEvent).toMatchObject({
+      type: 'function-return',
+      functionName: 'greet',
+      value: { type: 'undefined' },
+    })
+  })
+
+
+it('records nested function calls with the correct call stack', () => {
+  const { context } = executeSourceWithContext(`
+    function inner() {
+      return 10;
+    }
+
+    function outer() {
+      return inner();
+    }
+
+    let result = outer();
+  `)
+
+  const events = context.eventRecorder.getEvents()
+  const snapshots = context.snapshotRecorder.getSnapshots()
+
+  const callEvents = events.filter(
+    (event: ExecutionEvent) => event.type === 'function-call',
+  )
+
+  expect(callEvents).toHaveLength(2)
+
+  const outerCall = callEvents[0]
+  const innerCall = callEvents[1]
+
+  expect(outerCall.type).toBe('function-call')
+  expect(innerCall.type).toBe('function-call')
+
+  if (
+    outerCall.type !== 'function-call' ||
+    innerCall.type !== 'function-call'
+  ) {
+    throw new Error('Expected function-call events.')
+  }
+
+  expect(outerCall.functionName).toBe('outer')
+  expect(innerCall.functionName).toBe('inner')
+
+  const innerSnapshot = snapshots[innerCall.index]
+
+  expect(innerSnapshot.callStack).toHaveLength(2)
+  expect(innerSnapshot.callStack[0].functionName).toBe('outer')
+  expect(innerSnapshot.callStack[1].functionName).toBe('inner')
+})
+
+
+it('cleans up the call stack when a function throws an error', () => {
+  const environment = new Environment()
+  const context = createExecutionContext()
+
+  expect(() => {
+    executeSourceWithContext(`
+      function fail() {
+        missingVariable;
+      }
+
+      fail();
+    `, environment, context)
+  }).toThrow('Variable "missingVariable" is not defined.')
+
+  expect(context.callStack).toHaveLength(0)
+  expect(context.functionCallDepth).toBe(0)
+})
+
+
 })

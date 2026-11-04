@@ -89,9 +89,14 @@ function isAstNode(value: unknown): value is AstNode {
 
 export class ReturnSignal {
   public readonly value: RuntimeValue
+  public readonly location: SourceLocation | null
 
-  constructor(value: RuntimeValue) {
+  constructor(
+    value: RuntimeValue,
+    location: SourceLocation | null = null,
+  ) {
     this.value = value
+    this.location = location
   }
 }
 
@@ -155,9 +160,18 @@ function invokeFunction(
 
   context.functionCallDepth += 1
 
-  try {
-    const functionEnvironment = new Environment(fn.closure)
+  const functionName = fn.declaration.id?.name ?? '<anonymous>'
+  const frameId = context.nextFrameId++
 
+  const frame: CallFrameSnapshot = {
+    id: frameId,
+    functionName,
+    source: getSourceLocation(fn.declaration),
+  }
+
+  const functionEnvironment = new Environment(fn.closure)
+
+  try {
     // Initialize function parameters.
     for (let index = 0; index < fn.declaration.params.length; index += 1) {
       const parameter = fn.declaration.params[index]
@@ -179,6 +193,20 @@ function invokeFunction(
       )
     }
 
+    // Add this function to the active call stack.
+    context.callStack.push(frame)
+
+    recordExecutionEvent(
+      context,
+      {
+        type: 'function-call',
+        location: frame.source,
+        functionName,
+        frameId,
+      },
+      functionEnvironment,
+    )
+
     try {
       executeStatement(
         fn.declaration.body,
@@ -187,6 +215,18 @@ function invokeFunction(
       )
     } catch (error: unknown) {
       if (error instanceof ReturnSignal) {
+        recordExecutionEvent(
+          context,
+          {
+            type: 'function-return',
+            location: error.location,
+            functionName,
+            frameId,
+            value: toRuntimeValueSnapshot(error.value),
+          },
+          functionEnvironment,
+        )
+
         return error.value
       }
 
@@ -194,8 +234,27 @@ function invokeFunction(
     }
 
     // A function without an explicit return produces undefined.
-    return createUndefined()
+    const returnValue = createUndefined()
+
+    recordExecutionEvent(
+      context,
+      {
+        type: 'function-return',
+        location: frame.source,
+        functionName,
+        frameId,
+        value: toRuntimeValueSnapshot(returnValue),
+      },
+      functionEnvironment,
+    )
+
+    return returnValue
   } finally {
+    // Remove this frame even if execution fails.
+    if (context.callStack[context.callStack.length - 1] === frame) {
+      context.callStack.pop()
+    }
+
     context.functionCallDepth -= 1
   }
 }
@@ -467,7 +526,10 @@ case 'IfStatement': {
               onAssignment,
             )
 
-        throw new ReturnSignal(value)
+        throw new ReturnSignal(
+          value,
+          getSourceLocation(statement),
+        )
     }
 
     default:
