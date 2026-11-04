@@ -5,6 +5,7 @@ import {
   evaluateExpression,
   isTruthy,
   type FunctionInvoker,
+  type AssignmentObserver,
 } from './evaluate'
 import {
   createFunction,
@@ -12,12 +13,35 @@ import {
   type RuntimeValue,
   type FunctionRuntimeValue,
 } from './value'
+import {
+  ExecutionRecorder,
+  toRuntimeValueSnapshot,
+  type ExecutionEventInput,
+} from '../trace/ExecutionRecorder'
+import { ExecutionSnapshotRecorder } from '../trace/ExecutionSnapshotRecorder'
+import type {
+  CallFrameSnapshot,
+  SourceLocation,
+  ExecutionEvent,
+} from '../trace/types'
+
 
 export type ExecutionContext = {
+  // Loop limits
   loopIterations: number
   maxLoopIterations: number
+
+  // Function call limits
   functionCallDepth: number
   maxFunctionCallDepth: number
+
+  // Execution history
+  eventRecorder: ExecutionRecorder
+  snapshotRecorder: ExecutionSnapshotRecorder
+
+  // Active function calls
+  callStack: CallFrameSnapshot[]
+  nextFrameId: number
 }
 
 const DEFAULT_MAX_LOOP_ITERATIONS = 10_000
@@ -27,8 +51,15 @@ export function createExecutionContext(): ExecutionContext {
   return {
     loopIterations: 0,
     maxLoopIterations: DEFAULT_MAX_LOOP_ITERATIONS,
+
     functionCallDepth: 0,
     maxFunctionCallDepth: DEFAULT_MAX_FUNCTION_CALL_DEPTH,
+
+    eventRecorder: new ExecutionRecorder(),
+    snapshotRecorder: new ExecutionSnapshotRecorder(),
+
+    callStack: [],
+    nextFrameId: 1,
   }
 }
 
@@ -62,6 +93,52 @@ export class ReturnSignal {
   constructor(value: RuntimeValue) {
     this.value = value
   }
+}
+
+type SourceNode = {
+  start?: number
+  end?: number
+  loc?: {
+    start: {
+      line: number
+      column: number
+    }
+  } | null
+}
+
+function getSourceLocation(node: SourceNode): SourceLocation | null {
+  if (
+    node.start === undefined ||
+    node.end === undefined ||
+    node.loc === null ||
+    node.loc === undefined
+  ) {
+    return null
+  }
+
+  return {
+    start: node.start,
+    end: node.end,
+    line: node.loc.start.line,
+    column: node.loc.start.column + 1,
+  }
+}
+
+function recordExecutionEvent(
+  context: ExecutionContext,
+  event: ExecutionEventInput,
+  environment: Environment,
+): ExecutionEvent {
+  const recordedEvent = context.eventRecorder.record(event)
+
+  context.snapshotRecorder.capture(
+    recordedEvent.index,
+    'running',
+    environment,
+    context.callStack,
+  )
+
+  return recordedEvent
 }
 
 function invokeFunction(
@@ -131,62 +208,114 @@ export function executeStatement(
   const callFunction: FunctionInvoker = (fn, args) =>
     invokeFunction(fn, args, context)
 
+  const onAssignment: AssignmentObserver = (
+  name,
+  previousValue,
+  newValue,
+  location,
+) => {
+  recordExecutionEvent(
+    context,
+    {
+      type: 'variable-assigned',
+      location,
+      name,
+      previousValue: toRuntimeValueSnapshot(previousValue),
+      newValue: toRuntimeValueSnapshot(newValue),
+    },
+    environment,
+  )
+}
+
   switch (statement.type) {
-    case 'VariableDeclaration': {
-      const declaration =
-        statement as unknown as VariableDeclarationNode
+case 'VariableDeclaration': {
+  const declaration =
+    statement as unknown as VariableDeclarationNode
 
-      if (declaration.kind !== 'let' && declaration.kind !== 'const') {
-        throw new RuntimeError(
-          'Only let and const declarations are supported.',
-          'UNSUPPORTED_EXPRESSION',
-        )
-      }
+  if (declaration.kind !== 'let' && declaration.kind !== 'const') {
+    throw new RuntimeError(
+      'Only let and const declarations are supported.',
+      'UNSUPPORTED_EXPRESSION',
+    )
+  }
 
-      // Declare all names first, so references to later declarations
-      // in the same statement correctly encounter the temporal dead zone.
-      for (const item of declaration.declarations) {
-        if (!isAstNode(item.id) || item.id.type !== 'Identifier') {
-          throw new RuntimeError(
-            'Only simple variable identifiers are supported.',
-            'UNSUPPORTED_EXPRESSION',
-          )
-        }
-
-        const name = item.id.name
-
-        if (typeof name !== 'string') {
-          throw new RuntimeError(
-            'Invalid variable identifier.',
-            'UNSUPPORTED_EXPRESSION',
-          )
-        }
-
-        environment.declare(name, declaration.kind)
-      }
-
-      // Initialize each variable in source order.
-      for (const item of declaration.declarations) {
-        const name = item.id.name as string
-
-        const value = item.init === null
-          ? createUndefined()
-          : evaluateExpression(item.init, environment, callFunction)
-
-        environment.initialize(name, value)
-      }
-
-      return
+  // First declare every binding to preserve temporal dead zone behaviour.
+  for (const item of declaration.declarations) {
+    if (!isAstNode(item.id) || item.id.type !== 'Identifier') {
+      throw new RuntimeError(
+        'Only simple variable identifiers are supported.',
+        'UNSUPPORTED_EXPRESSION',
+      )
     }
 
-    case 'ExpressionStatement': {
-    evaluateExpression(
-        statement.expression,
-        environment,
-        callFunction,
-        )
-        return
+    const name = item.id.name
+
+    if (typeof name !== 'string') {
+      throw new RuntimeError(
+        'Invalid variable identifier.',
+        'UNSUPPORTED_EXPRESSION',
+      )
     }
+
+    environment.declare(name, declaration.kind)
+  }
+
+  // Record declarations after all bindings have been created.
+  for (const item of declaration.declarations) {
+    const name = item.id.name as string
+
+    recordExecutionEvent(
+      context,
+      {
+        type: 'variable-declared',
+        location: getSourceLocation(item as SourceNode),
+        name,
+        kind: declaration.kind,
+      },
+      environment,
+    )
+  }
+
+  // Initialize variables in source order.
+  for (const item of declaration.declarations) {
+    const name = item.id.name as string
+
+    const value =
+      item.init === null
+        ? createUndefined()
+        : evaluateExpression(
+            item.init,
+            environment,
+            callFunction,
+            onAssignment,
+          )
+
+    environment.initialize(name, value)
+
+    recordExecutionEvent(
+      context,
+      {
+        type: 'variable-initialized',
+        location: getSourceLocation(item as SourceNode),
+        name,
+        value: toRuntimeValueSnapshot(value),
+      },
+      environment,
+    )
+  }
+
+  return
+}
+
+case 'ExpressionStatement': {
+  evaluateExpression(
+    statement.expression,
+    environment,
+    callFunction,
+    onAssignment,
+  )
+  return
+}
 
     case 'BlockStatement': {
     const blockEnvironment = new Environment(environment)
@@ -197,24 +326,44 @@ export function executeStatement(
     return
     }
 
-    case 'IfStatement': {
-    const condition = evaluateExpression(statement.test, environment)
+case 'IfStatement': {
+  const condition = evaluateExpression(
+    statement.test,
+    environment,
+    callFunction,
+    onAssignment,
+  )
 
-    if (isTruthy(condition)) {
-        if (statement.consequent === undefined) {
-        throw new RuntimeError(
-            'The if statement has no consequent.',
-            'UNSUPPORTED_EXPRESSION',
-        )
-        }
+  const branch = isTruthy(condition) ? 'consequent' : 'alternate'
 
-        executeStatement(statement.consequent, environment, context)
-    } else if (statement.alternate !== null && statement.alternate !== undefined) {
-        executeStatement(statement.alternate, environment, context)
+  recordExecutionEvent(
+    context,
+    {
+      type: 'branch-taken',
+      location: getSourceLocation(statement),
+      branch,
+    },
+    environment,
+  )
+
+  if (branch === 'consequent') {
+    if (statement.consequent === undefined) {
+      throw new RuntimeError(
+        'The if statement has no consequent.',
+        'UNSUPPORTED_EXPRESSION',
+      )
     }
 
-    return
-    }
+    executeStatement(statement.consequent, environment, context)
+  } else if (
+    statement.alternate !== null &&
+    statement.alternate !== undefined
+  ) {
+    executeStatement(statement.alternate, environment, context)
+  }
+
+  return
+}
 
     case 'ForStatement': {
       const loopEnvironment = new Environment(environment)
@@ -224,7 +373,12 @@ export function executeStatement(
         if (statement.init.type === 'VariableDeclaration') {
           executeStatement(statement.init, loopEnvironment, context)
         } else {
-          evaluateExpression(statement.init, loopEnvironment)
+          evaluateExpression(
+            statement.init,
+            loopEnvironment,
+            callFunction,
+            onAssignment,
+          )
         }
       }
 
@@ -233,7 +387,13 @@ export function executeStatement(
       while (
         statement.test === null ||
         statement.test === undefined ||
-        isTruthy(evaluateExpression(statement.test, loopEnvironment))
+        isTruthy(evaluateExpression(
+          statement.test,
+          loopEnvironment,
+          callFunction,
+          onAssignment,
+        ),
+      )
       ) {
         if (context.loopIterations >= context.maxLoopIterations) {
           throw new RuntimeError(
@@ -243,6 +403,16 @@ export function executeStatement(
         }
 
         context.loopIterations += 1
+
+        recordExecutionEvent(
+          context,
+          {
+            type: 'loop-iteration',
+            location: getSourceLocation(statement),
+            iteration: context.loopIterations,
+          },
+          loopEnvironment,
+        )
 
         if (statement.body === undefined) {
           throw new RuntimeError(
@@ -255,7 +425,12 @@ export function executeStatement(
 
         // Execute the update expression, if one exists.
         if (statement.update !== null && statement.update !== undefined) {
-          evaluateExpression(statement.update, loopEnvironment)
+          evaluateExpression(
+            statement.update,
+            loopEnvironment,
+            callFunction,
+            onAssignment,
+          )
         }
       }
 
@@ -289,6 +464,7 @@ export function executeStatement(
               statement.argument,
               environment,
               callFunction,
+              onAssignment,
             )
 
         throw new ReturnSignal(value)

@@ -9,15 +9,61 @@ import {
   type RuntimeValue,
   type FunctionRuntimeValue,
 } from './value'
+import type { SourceLocation } from '../trace/types'
 
 export type FunctionInvoker = (
   fn: FunctionRuntimeValue,
   args: RuntimeValue[],
 ) => RuntimeValue
 
+export type AssignmentObserver = (
+  name: string,
+  previousValue: RuntimeValue,
+  newValue: RuntimeValue,
+  location: SourceLocation | null,
+) => void
+
 type AstExpression = {
   type: string
   [key: string]: unknown
+}
+
+function getExpressionLocation(
+  node: AstExpression,
+): SourceLocation | null {
+  const start = node.start
+  const end = node.end
+  const loc = node.loc
+
+  if (
+    typeof start !== 'number' ||
+    typeof end !== 'number' ||
+    typeof loc !== 'object' ||
+    loc === null ||
+    !('start' in loc)
+  ) {
+    return null
+  }
+
+  const startLocation = loc.start
+
+  if (
+    typeof startLocation !== 'object' ||
+    startLocation === null ||
+    !('line' in startLocation) ||
+    !('column' in startLocation) ||
+    typeof startLocation.line !== 'number' ||
+    typeof startLocation.column !== 'number'
+  ) {
+    return null
+  }
+
+  return {
+    start,
+    end,
+    line: startLocation.line,
+    column: startLocation.column + 1,
+  }
 }
 
 function asExpression(value: unknown): AstExpression {
@@ -237,6 +283,7 @@ export function evaluateExpression(
   expression: Expression,
   environment: Environment,
   invokeFunction?: FunctionInvoker,
+  onAssignment?: AssignmentObserver,
 ): RuntimeValue {
   const node = asExpression(expression)
 
@@ -271,6 +318,7 @@ export function evaluateExpression(
         node.left as Expression,
         environment,
         invokeFunction,
+        onAssignment,
       )
 
       const right = evaluateExpression(
@@ -298,6 +346,7 @@ export function evaluateExpression(
             node.argument as Expression,
             environment,
             invokeFunction,
+            onAssignment,
         )
 
       switch (node.operator) {
@@ -350,6 +399,13 @@ export function evaluateExpression(
 
       environment.assign(argument.name, updatedValue)
 
+      onAssignment?.(
+        argument.name,
+        previousValue,
+        updatedValue,
+        getExpressionLocation(node),
+      )
+
       return node.prefix
         ? updatedValue
         : createNumber(previousNumber)
@@ -376,9 +432,19 @@ export function evaluateExpression(
         node.right as Expression,
         environment,
         invokeFunction,
+        onAssignment,
         )
 
+      const previousValue = environment.get(left.name)
+
       environment.assign(left.name, value)
+
+      onAssignment?.(
+        left.name,
+        previousValue,
+        value,
+        getExpressionLocation(node),
+      )
 
       return value
     }
@@ -395,6 +461,7 @@ export function evaluateExpression(
     node.callee as Expression,
     environment,
     invokeFunction,
+    onAssignment,
   )
 
   if (callee.type !== 'function') {
@@ -407,7 +474,7 @@ export function evaluateExpression(
   const argumentsList = node.arguments as Expression[]
 
   const args = argumentsList.map((argument) =>
-    evaluateExpression(argument, environment, invokeFunction),
+    evaluateExpression(argument, environment, invokeFunction, onAssignment),
   )
 
   return invokeFunction(callee, args)

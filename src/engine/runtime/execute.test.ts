@@ -534,4 +534,221 @@ it('returns undefined when no return expression is provided', () => {
     }).toThrow('function call depth limit of 3 was reached')
   })
 
+  it('records variable declaration and initialization events', () => {
+  const context = createExecutionContext()
+
+  executeSource('let score = 10;', new Environment(), context)
+
+  const events = context.eventRecorder.getEvents()
+
+  expect(events.map((event) => event.type)).toEqual([
+    'variable-declared',
+    'variable-initialized',
+  ])
+
+  expect(events[0]).toMatchObject({
+    type: 'variable-declared',
+    name: 'score',
+    kind: 'let',
+  })
+
+  expect(events[1]).toMatchObject({
+    type: 'variable-initialized',
+    name: 'score',
+    value: {
+      type: 'number',
+      value: 10,
+    },
+  })
+
+  expect(context.snapshotRecorder.getSnapshots()).toHaveLength(2)
+})
+
+it('records variable assignments with previous and new values', () => {
+  const context = createExecutionContext()
+
+  executeSource(`
+    let score = 10;
+    score = 20;
+  `, new Environment(), context)
+
+  const assignmentEvents = context.eventRecorder
+    .getEvents()
+    .filter((event) => event.type === 'variable-assigned')
+
+  expect(assignmentEvents).toHaveLength(1)
+
+  expect(assignmentEvents[0]).toMatchObject({
+    type: 'variable-assigned',
+    name: 'score',
+    previousValue: {
+      type: 'number',
+      value: 10,
+    },
+    newValue: {
+      type: 'number',
+      value: 20,
+    },
+  })
+})
+
+it('records increment and decrement operations', () => {
+  const context = createExecutionContext()
+
+  executeSource(`
+    let count = 5;
+    count++;
+    count--;
+  `, new Environment(), context)
+
+  const assignmentEvents = context.eventRecorder
+    .getEvents()
+    .filter((event) => event.type === 'variable-assigned')
+
+  expect(assignmentEvents).toHaveLength(2)
+
+  expect(assignmentEvents[0]).toMatchObject({
+    type: 'variable-assigned',
+    name: 'count',
+    previousValue: { type: 'number', value: 5 },
+    newValue: { type: 'number', value: 6 },
+  })
+
+  expect(assignmentEvents[1]).toMatchObject({
+    type: 'variable-assigned',
+    name: 'count',
+    previousValue: { type: 'number', value: 6 },
+    newValue: { type: 'number', value: 5 },
+  })
+})
+
+it('captures a snapshot after every recorded event', () => {
+  const context = createExecutionContext()
+
+  executeSource(`
+    let score = 10;
+    score = 20;
+  `, new Environment(), context)
+
+  const events = context.eventRecorder.getEvents()
+  const snapshots = context.snapshotRecorder.getSnapshots()
+
+  expect(snapshots).toHaveLength(events.length)
+
+  expect(snapshots.map((snapshot) => snapshot.eventIndex)).toEqual(
+    events.map((event) => event.index),
+  )
+
+  expect(snapshots[0].scopes[0].bindings).toContainEqual({
+    name: 'score',
+    kind: 'let',
+    initialized: false,
+    value: null,
+  })
+
+  expect(snapshots[1].scopes[0].bindings).toContainEqual({
+    name: 'score',
+    kind: 'let',
+    initialized: true,
+    value: { type: 'number', value: 10 },
+  })
+
+  expect(snapshots[2].scopes[0].bindings).toContainEqual({
+    name: 'score',
+    kind: 'let',
+    initialized: true,
+    value: { type: 'number', value: 20 },
+  })
+})
+
+it('does not record an assignment event when const reassignment fails', () => {
+  const context = createExecutionContext()
+
+  expect(() => {
+    executeSource(`
+      const limit = 20;
+      limit = 30;
+    `, new Environment(), context)
+  }).toThrow('Assignment to constant variable "limit".')
+
+  const assignmentEvents = context.eventRecorder
+    .getEvents()
+    .filter((event) => event.type === 'variable-assigned')
+
+  expect(assignmentEvents).toHaveLength(0)
+})
+
+it('records which branch of an if statement was taken', () => {
+  const context = createExecutionContext()
+
+  executeSource(`
+    let score = 10;
+
+    if (score > 5) {
+      score = 20;
+    } else {
+      score = 0;
+    }
+  `, new Environment(), context)
+
+  const branchEvents = context.eventRecorder
+    .getEvents()
+    .filter((event) => event.type === 'branch-taken')
+
+  expect(branchEvents).toHaveLength(1)
+
+  expect(branchEvents[0]).toMatchObject({
+    type: 'branch-taken',
+    branch: 'consequent',
+  })
+})
+
+it('records the alternate branch when the if condition is false', () => {
+  const context = createExecutionContext()
+
+  executeSource(`
+    let score = 2;
+
+    if (score > 5) {
+      score = 20;
+    } else {
+      score = 0;
+    }
+  `, new Environment(), context)
+
+  const branchEvents = context.eventRecorder
+    .getEvents()
+    .filter((event) => event.type === 'branch-taken')
+
+  expect(branchEvents).toHaveLength(1)
+
+  expect(branchEvents[0]).toMatchObject({
+    type: 'branch-taken',
+    branch: 'alternate',
+  })
+})
+
+it('records each for loop iteration', () => {
+  const context = createExecutionContext()
+
+  executeSource(`
+    for (let i = 0; i < 3; i++) {
+      // Loop body
+    }
+  `, new Environment(), context)
+
+  const loopEvents = context.eventRecorder
+    .getEvents()
+    .filter((event) => event.type === 'loop-iteration')
+
+  expect(loopEvents).toHaveLength(3)
+
+  expect(loopEvents.map((event) => {
+    if (event.type === 'loop-iteration') {
+      return event.iteration
+    }
+
+    return null
+  })).toEqual([1, 2, 3])
+})
 })
