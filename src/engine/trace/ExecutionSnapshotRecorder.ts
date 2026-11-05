@@ -37,56 +37,81 @@ export class ExecutionSnapshotRecorder {
     return newId
   }
 
-  private captureScopes(currentEnvironment: Environment): ScopeSnapshot[] {
-    const environments: Environment[] = []
-    let environment: Environment | null = currentEnvironment
+private captureScopes(
+  currentEnvironment: Environment,
+  additionalEnvironments: Environment[] = [],
+): ScopeSnapshot[] {
+  const environments: Environment[] = []
+  const seen = new Set<Environment>()
+
+  const addEnvironmentChain = (start: Environment) => {
+    const chain: Environment[] = []
+    let environment: Environment | null = start
 
     while (environment !== null) {
-      environments.push(environment)
+      chain.push(environment)
       environment = environment.parent
     }
 
-    // Present scopes from outermost to innermost.
-    environments.reverse()
+    // Add scopes from outermost to innermost.
+    chain.reverse()
 
-    return environments.map((current) => {
-      const parent = current.parent
-
-      return {
-        scopeId: this.getScopeId(current),
-        parentScopeId: parent ? this.getScopeId(parent) : null,
-        type: current.metadata.type,
-        name: current.metadata.name,
-        bindings: current.getOwnBindings().map((binding) => ({
-          name: binding.name,
-          kind: binding.mutable ? 'let' : 'const',
-          initialized: binding.initialized,
-          value: binding.initialized
-            ? toRuntimeValueSnapshot(binding.value)
-            : null,
-        })),
+    for (const current of chain) {
+      if (!seen.has(current)) {
+        seen.add(current)
+        environments.push(current)
       }
-    })
-  }
-
-  capture(
-    eventIndex: number,
-    status: ExecutionStatus,
-    environment: Environment,
-    callStack: CallFrameSnapshot[],
-  ): ExecutionSnapshot {
-    const snapshot: ExecutionSnapshot = {
-      index: this.snapshots.length,
-      eventIndex,
-      status,
-      scopes: this.captureScopes(environment),
-      callStack: callStack.map((frame) => ({ ...frame })),
     }
-
-    this.snapshots.push(snapshot)
-
-    return cloneSnapshot(snapshot)
   }
+
+  addEnvironmentChain(currentEnvironment)
+
+  for (const additionalEnvironment of additionalEnvironments) {
+    addEnvironmentChain(additionalEnvironment)
+  }
+
+  return environments.map((current) => {
+    const parent = current.parent
+
+    return {
+      scopeId: this.getScopeId(current),
+      parentScopeId: parent ? this.getScopeId(parent) : null,
+      type: current.metadata.type,
+      name: current.metadata.name,
+      bindings: current.getOwnBindings().map((binding) => ({
+        name: binding.name,
+        kind: binding.mutable ? 'let' : 'const',
+        initialized: binding.initialized,
+        value: binding.initialized
+          ? toRuntimeValueSnapshot(binding.value)
+          : null,
+      })),
+    }
+  })
+}
+
+capture(
+  eventIndex: number,
+  status: ExecutionStatus,
+  environment: Environment,
+  callStack: CallFrameSnapshot[],
+  additionalEnvironments: Environment[] = [],
+): ExecutionSnapshot {
+  const snapshot: ExecutionSnapshot = {
+    index: this.snapshots.length,
+    eventIndex,
+    status,
+    scopes: this.captureScopes(
+      environment,
+      additionalEnvironments,
+    ),
+    callStack: callStack.map((frame) => ({ ...frame })),
+  }
+
+  this.snapshots.push(snapshot)
+
+  return cloneSnapshot(snapshot)
+}
 
   getSnapshots(): ExecutionSnapshot[] {
   return this.snapshots.map(cloneSnapshot)

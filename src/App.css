@@ -480,3 +480,55 @@
   width: 4px !important;
   margin-left: 4px;
 }
+
+
+/* Call Stack panel */
+
+.call-stack-panel {
+  min-height: 0;
+}
+
+.call-stack-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.call-stack-frame {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #2b303b;
+  border-radius: 6px;
+  background: #20242e;
+}
+
+.call-stack-frame-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.call-stack-function {
+  color: #e5e7eb;
+  font-family: monospace;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.call-stack-frame-label {
+  color: #a99dfb;
+  font-size: 10px;
+}
+
+.call-stack-source {
+  flex-shrink: 0;
+  color: #8992a2;
+  font-family: monospace;
+  font-size: 11px;
+}

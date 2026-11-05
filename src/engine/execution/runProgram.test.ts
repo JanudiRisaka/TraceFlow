@@ -72,6 +72,42 @@ describe('runProgram', () => {
     }
   })
 
+
+  it('preserves the nested call stack when a runtime error occurs', () => {
+    const result = runProgram(`
+      function first() {
+        second()
+      }
+
+      function second() {
+        third()
+      }
+
+      function third() {
+        missingVariable
+      }
+
+      first()
+    `)
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+      expect(result.error.phase).toBe('runtime')
+
+      const errorSnapshot = result.snapshots.find(
+        (snapshot) => snapshot.status === 'error',
+      )
+
+      expect(errorSnapshot).toBeDefined()
+
+      expect(
+        errorSnapshot?.callStack.map((frame) => frame.functionName),
+      ).toEqual(['first', 'second', 'third'])
+    }
+  })
+
+
   it('records variable changes in execution snapshots', () => {
     const result = runProgram('let x = 10; x = 20;')
 
@@ -224,6 +260,62 @@ it('records console output as an execution event', () => {
     )
 
     expect(outputSnapshot).toBeDefined()
+  }
+})
+
+it('preserves active function scopes and local variables when a runtime error occurs', () => {
+  const result = runProgram(`
+    function first() {
+      let firstValue = 10
+      second()
+    }
+
+    function second() {
+      let secondValue = 20
+      missingVariable
+    }
+
+    first()
+  `)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    const errorSnapshot = result.snapshots.find(
+      (snapshot) => snapshot.status === 'error',
+    )
+
+    expect(errorSnapshot).toBeDefined()
+
+    expect(
+      errorSnapshot?.callStack.map((frame) => frame.functionName),
+    ).toEqual(['first', 'second'])
+
+    const functionScopes = errorSnapshot?.scopes.filter(
+      (scope) => scope.type === 'function',
+    )
+
+    expect(
+      functionScopes?.map((scope) => scope.name),
+    ).toEqual(['first', 'second'])
+
+    const blockScopes = errorSnapshot?.scopes.filter(
+      (scope) => scope.type === 'block',
+    )
+
+    expect(blockScopes).toHaveLength(2)
+
+    expect(
+      blockScopes?.[0].bindings.find(
+        (binding) => binding.name === 'firstValue',
+      )?.value,
+    ).toEqual({ type: 'number', value: 10 })
+
+    expect(
+      blockScopes?.[1].bindings.find(
+        (binding) => binding.name === 'secondValue',
+      )?.value,
+    ).toEqual({ type: 'number', value: 20 })
   }
 })
 

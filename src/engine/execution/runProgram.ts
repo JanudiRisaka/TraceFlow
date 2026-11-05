@@ -64,7 +64,7 @@ export function runProgram(source: string): ProgramExecutionResult {
     recordedStart.index,
     'running',
     environment,
-    context.callStack,
+    context.errorCallStack ?? context.callStack,
   )
 
   try {
@@ -124,7 +124,8 @@ export function runProgram(source: string): ProgramExecutionResult {
       recordedError.index,
       'error',
       environment,
-      context.callStack,
+      context.errorCallStack ?? context.callStack,
+      context.errorEnvironments ?? [],
     )
 
     return {

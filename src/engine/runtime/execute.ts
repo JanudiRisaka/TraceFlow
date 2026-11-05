@@ -44,6 +44,15 @@ export type ExecutionContext = {
   // Active function calls
   callStack: CallFrameSnapshot[]
   nextFrameId: number
+
+  // Preserve the call stack when a runtime error occurs.
+  errorCallStack: CallFrameSnapshot[] | null
+
+  // Active function environments.
+  activeEnvironments: Environment[]
+
+  // Preserve active function environments when a runtime error occurs.
+  errorEnvironments: Environment[] | null
 }
 
 const DEFAULT_MAX_LOOP_ITERATIONS = 10_000
@@ -63,6 +72,9 @@ export function createExecutionContext(): ExecutionContext {
 
     callStack: [],
     nextFrameId: 1,
+    errorCallStack: null,
+    activeEnvironments: [],
+    errorEnvironments: null,
   }
 }
 
@@ -149,6 +161,7 @@ function recordExecutionEvent(
   return recordedEvent
 }
 
+
 function invokeFunction(
   fn: FunctionRuntimeValue,
   args: RuntimeValue[],
@@ -173,9 +186,9 @@ function invokeFunction(
   }
 
   const functionEnvironment = new Environment(fn.closure, {
-  type: 'function',
-  name: functionName,
-})
+    type: 'function',
+    name: functionName,
+  })
 
   try {
     // Initialize function parameters.
@@ -199,8 +212,9 @@ function invokeFunction(
       )
     }
 
-    // Add this function to the active call stack.
+    // Add this function to the active call stack and environments.
     context.callStack.push(frame)
+    context.activeEnvironments.push(functionEnvironment)
 
     recordExecutionEvent(
       context,
@@ -236,11 +250,30 @@ function invokeFunction(
         return error.value
       }
 
+      // Preserve the original call stack before finally removes frames.
+      if (context.errorCallStack === null) {
+        context.errorCallStack = context.callStack.map((frame) => ({
+          ...frame,
+        }))
+      }
+
+      // Preserve active function environments before they are removed.
+      if (context.errorEnvironments === null) {
+        context.errorEnvironments = [
+          ...context.activeEnvironments,
+        ]
+      }
+
       throw error
     }
 
     // A function without an explicit return produces undefined.
     const returnValue = createUndefined()
+
+    // Remove the returning function before recording its return snapshot.
+    if (context.callStack[context.callStack.length - 1] === frame) {
+      context.callStack.pop()
+    }
 
     recordExecutionEvent(
       context,
@@ -261,9 +294,19 @@ function invokeFunction(
       context.callStack.pop()
     }
 
+    // Remove this function environment.
+    if (
+      context.activeEnvironments[
+        context.activeEnvironments.length - 1
+      ] === functionEnvironment
+    ) {
+      context.activeEnvironments.pop()
+    }
+
     context.functionCallDepth -= 1
   }
 }
+
 
 export function executeStatement(
   statement: Statement,
@@ -401,18 +444,47 @@ case 'ExpressionStatement': {
   return
 }
 
+
+
 case 'BlockStatement': {
   const blockEnvironment = new Environment(environment, {
     type: 'block',
     name: 'Block',
   })
 
-  for (const bodyStatement of statement.body) {
-    executeStatement(bodyStatement, blockEnvironment, context)
+  context.activeEnvironments.push(blockEnvironment)
+
+  try {
+    for (const bodyStatement of statement.body) {
+      executeStatement(bodyStatement, blockEnvironment, context)
+    }
+  } catch (error: unknown) {
+    // Preserve environments only for genuine runtime errors.
+    // ReturnSignal represents normal function control flow.
+    if (
+      !(error instanceof ReturnSignal) &&
+      context.errorEnvironments === null
+    ) {
+      context.errorEnvironments = [
+        ...context.activeEnvironments,
+      ]
+    }
+
+    throw error
+  } finally {
+    if (
+      context.activeEnvironments[
+        context.activeEnvironments.length - 1
+      ] === blockEnvironment
+    ) {
+      context.activeEnvironments.pop()
+    }
   }
 
   return
 }
+
+
 
 case 'IfStatement': {
   const condition = evaluateExpression(

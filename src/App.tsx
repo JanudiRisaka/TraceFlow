@@ -7,6 +7,7 @@ import { ExecutionWorkerClient } from './engine/worker/ExecutionWorkerClient'
 import type { ProgramExecutionResult } from './engine/execution/types'
 import { ExecutionTimeline } from './components/ExecutionTimeline'
 import type {
+  CallFrameSnapshot,
   ExecutionSnapshot,
   RuntimeValueSnapshot,
 } from './engine/trace/types'
@@ -69,7 +70,6 @@ function Header({ isRunning, onRun, onReset }: HeaderProps) {
     </header>
   )
 }
-
 
 function CodeEditorPanel({
   code,
@@ -163,9 +163,10 @@ useEffect(() => {
   )
 }
 
-
 type ExecutionPanelProps = {
+  result: ProgramExecutionResult | null
   events: import('./engine/trace/types').ExecutionEvent[]
+  isRunning: boolean
   selectedIndex: number
   onSelect: (index: number) => void
   onPrevious: () => void
@@ -173,18 +174,27 @@ type ExecutionPanelProps = {
 }
 
 function ExecutionPanel({
-  events,
-  selectedIndex,
-  onSelect,
-  onPrevious,
-  onNext,
+    result,
+    events,
+    isRunning,
+    selectedIndex,
+    onSelect,
+    onPrevious,
+    onNext,
 }: ExecutionPanelProps) {
+  const statusLabel = isRunning
+  ? 'Running...'
+  : result === null
+    ? 'Not started'
+    : result.ok
+      ? 'Completed'
+      : 'Failed'
   return (
     <section className="panel execution-panel">
       <div className="panel-header">
         <h2>Execution trace</h2>
         <span className="status-badge">
-          {events.length > 0 ? 'Completed' : 'Not started'}
+          {statusLabel}
         </span>
       </div>
 
@@ -220,8 +230,6 @@ function ExecutionPanel({
     </section>
   )
 }
-
-
 
 type VariablesPanelProps = {
   snapshots: ExecutionSnapshot[]
@@ -362,12 +370,72 @@ function VariablesPanel({
   )
 }
 
+type CallStackPanelProps = {
+  snapshots: ExecutionSnapshot[]
+  selectedEventIndex: number
+}
 
+function CallStackPanel({
+  snapshots,
+  selectedEventIndex,
+}: CallStackPanelProps) {
+  const currentSnapshot = snapshots.find(
+    (snapshot) => snapshot.eventIndex === selectedEventIndex,
+  )
+
+  const callStack: CallFrameSnapshot[] =
+    currentSnapshot?.callStack ?? []
+
+  // The most recently called function appears at the top.
+  const visibleFrames = [...callStack].reverse()
+
+  return (
+    <section className="panel call-stack-panel">
+      <div className="panel-header">
+        <h2>Call Stack</h2>
+        <span className="panel-label">
+          {callStack.length} {callStack.length === 1 ? 'frame' : 'frames'}
+        </span>
+      </div>
+
+      {!currentSnapshot ? (
+        <div className="empty-state compact">
+          <p>Select an execution event to inspect the call stack.</p>
+        </div>
+      ) : visibleFrames.length === 0 ? (
+        <div className="empty-state compact">
+          <p>No active function calls.</p>
+        </div>
+      ) : (
+        <div className="call-stack-content">
+          {visibleFrames.map((frame, index) => (
+            <div className="call-stack-frame" key={frame.id}>
+              <div className="call-stack-frame-info">
+                <span className="call-stack-function">
+                  {frame.functionName}
+                </span>
+
+                <span className="call-stack-frame-label">
+                  {index === 0 ? 'Top of stack' : `Frame ${index + 1}`}
+                </span>
+              </div>
+
+              <span className="call-stack-source">
+                {frame.source
+                  ? `Line ${frame.source.line}`
+                  : 'Unknown location'}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
 
 type OutputPanelProps = {
   result: ProgramExecutionResult | null
 }
-
 
 function formatOutputValue(value: {
   type: string
@@ -430,8 +498,6 @@ function OutputPanel({ result }: OutputPanelProps) {
     </section>
   )
 }
-
-
 
 function App() {
   const [code, setCode] = useState<string>(initialCode)
@@ -513,7 +579,9 @@ const handleNextStep = () => {
 
         <div className="right-column">
           <ExecutionPanel
+            result={executionResult}
             events={events}
+            isRunning={isRunning}
             selectedIndex={selectedEventIndex}
             onSelect={setSelectedEventIndex}
             onPrevious={handlePreviousStep}
@@ -521,6 +589,11 @@ const handleNextStep = () => {
           />
 
           <VariablesPanel
+            snapshots={executionResult?.snapshots ?? []}
+            selectedEventIndex={selectedEventIndex}
+          />
+
+          <CallStackPanel
             snapshots={executionResult?.snapshots ?? []}
             selectedEventIndex={selectedEventIndex}
           />
