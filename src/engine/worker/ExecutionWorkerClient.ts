@@ -45,7 +45,8 @@ function isExecutionWorkerResponse(
     return (
       typeof executionResult.ok === 'boolean' &&
       Array.isArray(executionResult.events) &&
-      Array.isArray(executionResult.snapshots)
+      Array.isArray(executionResult.snapshots) &&
+      Array.isArray(executionResult.output)
     )
   }
 

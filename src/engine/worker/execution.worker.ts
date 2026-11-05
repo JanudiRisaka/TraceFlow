@@ -10,27 +10,52 @@ import type {
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope
 
-workerScope.onmessage = (
-  event: MessageEvent<ExecutionWorkerRequest>,
-) => {
+workerScope.onmessage = (event: MessageEvent<unknown>) => {
   const request = event.data
 
-  // Reject malformed requests.
+  // Check whether this message has a usable request ID.
   if (
-    !request ||
-    request.type !== 'run' ||
+    typeof request !== 'object' ||
+    request === null ||
+    !('requestId' in request) ||
     typeof request.requestId !== 'number' ||
-    typeof request.source !== 'string'
+    !Number.isSafeInteger(request.requestId) ||
+    request.requestId < 1
   ) {
     return
   }
 
+  const requestId = request.requestId
+
+  // Reject malformed requests when we can identify the request.
+  if (
+    !('type' in request) ||
+    request.type !== 'run' ||
+    !('source' in request) ||
+    typeof request.source !== 'string'
+  ) {
+    const response: ExecutionWorkerResponse = {
+      type: 'fatal-error',
+      requestId,
+      message: 'The Worker received an invalid execution request.',
+    }
+
+    workerScope.postMessage(response)
+    return
+  }
+
+  const validRequest: ExecutionWorkerRequest = {
+    type: 'run',
+    requestId,
+    source: request.source,
+  }
+
   try {
-    const result = runProgram(request.source)
+    const result = runProgram(validRequest.source)
 
     const response: ExecutionWorkerResponse = {
       type: 'result',
-      requestId: request.requestId,
+      requestId: validRequest.requestId,
       result,
     }
 
@@ -43,7 +68,7 @@ workerScope.onmessage = (
 
     const response: ExecutionWorkerResponse = {
       type: 'fatal-error',
-      requestId: request.requestId,
+      requestId: validRequest.requestId,
       message,
     }
 
