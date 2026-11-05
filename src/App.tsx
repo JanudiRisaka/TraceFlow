@@ -164,9 +164,8 @@ useEffect(() => {
 }
 
 type ExecutionPanelProps = {
-  result: ProgramExecutionResult | null
   events: import('./engine/trace/types').ExecutionEvent[]
-  isRunning: boolean
+  executionStatus: ExecutionStatus
   selectedIndex: number
   onSelect: (index: number) => void
   onPrevious: () => void
@@ -174,21 +173,22 @@ type ExecutionPanelProps = {
 }
 
 function ExecutionPanel({
-    result,
     events,
-    isRunning,
+    executionStatus,
     selectedIndex,
     onSelect,
     onPrevious,
     onNext,
 }: ExecutionPanelProps) {
-  const statusLabel = isRunning
-  ? 'Running...'
-  : result === null
-    ? 'Not started'
-    : result.ok
-      ? 'Completed'
-      : 'Failed'
+const statusLabels: Record<ExecutionStatus, string> = {
+  idle: 'Not started',
+  running: 'Running...',
+  completed: 'Completed',
+  'runtime-error': 'Runtime error',
+  'limit-exceeded': 'Limit exceeded',
+}
+
+const statusLabel = statusLabels[executionStatus]
   return (
     <section className="panel execution-panel">
       <div className="panel-header">
@@ -499,11 +499,23 @@ function OutputPanel({ result }: OutputPanelProps) {
   )
 }
 
+type ExecutionStatus =
+  | 'idle'
+  | 'running'
+  | 'completed'
+  | 'runtime-error'
+  | 'limit-exceeded'
+
 function App() {
   const [code, setCode] = useState<string>(initialCode)
   const [executionResult, setExecutionResult] =
     useState<ProgramExecutionResult | null>(null)
-  const [isRunning, setIsRunning] = useState(false)
+
+  const [executionStatus, setExecutionStatus] =
+  useState<ExecutionStatus>('idle')
+
+  const isRunning = executionStatus === 'running'
+
   const [selectedEventIndex, setSelectedEventIndex] = useState(0)
 
   const events = executionResult?.events ?? []
@@ -526,28 +538,40 @@ function App() {
   }, [workerClient])
 
 
-  const handleRun = async () => {
-    setIsRunning(true)
-    setExecutionResult(null)
-    setSelectedEventIndex(0)
+const handleRun = async () => {
+  setExecutionStatus('running')
+  setExecutionResult(null)
+  setSelectedEventIndex(0)
 
-    try {
-      const result = await workerClient.run(code)
-      setExecutionResult(result)
-    } catch (error: unknown) {
-      console.error('Worker execution failed:', error)
-    } finally {
-      setIsRunning(false)
-    }
-  }
+  try {
+    const result = await workerClient.run(code)
 
-  const handleReset = () => {
-    workerClient.terminate()
-    setCode(initialCode)
-    setExecutionResult(null)
-    setSelectedEventIndex(0)
-    setIsRunning(false)
+    setExecutionResult(result)
+
+    if (result.ok === true) {
+  setExecutionStatus('completed')
+  } else if (
+    result.ok === false &&
+    result.error.phase === 'runtime' &&
+    result.error.code === 'EXECUTION_LIMIT_EXCEEDED'
+  ) {
+    setExecutionStatus('limit-exceeded')
+  } else {
+    setExecutionStatus('runtime-error')
   }
+  } catch (error: unknown) {
+    console.error('Worker execution failed:', error)
+    setExecutionStatus('runtime-error')
+  }
+}
+
+const handleReset = () => {
+  workerClient.terminate()
+  setCode(initialCode)
+  setExecutionResult(null)
+  setSelectedEventIndex(0)
+  setExecutionStatus('idle')
+}
 
   const handlePreviousStep = () => {
   setSelectedEventIndex((current) => Math.max(0, current - 1))
@@ -579,9 +603,8 @@ const handleNextStep = () => {
 
         <div className="right-column">
           <ExecutionPanel
-            result={executionResult}
             events={events}
-            isRunning={isRunning}
+            executionStatus={executionStatus}
             selectedIndex={selectedEventIndex}
             onSelect={setSelectedEventIndex}
             onPrevious={handlePreviousStep}
