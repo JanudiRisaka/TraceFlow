@@ -416,6 +416,9 @@
 
 .scope-group {
   margin-bottom: 16px;
+  margin-left: calc(var(--scope-depth, 0) * 16px);
+  padding-left: 10px;
+  border-left: 1px solid #353b49;
 }
 
 .scope-heading {
@@ -466,4 +469,14 @@
   font-size: 12px;
   overflow-wrap: anywhere;
   text-align: right;
+}
+
+.execution-line-highlight {
+  background: rgba(169, 157, 251, 0.16);
+}
+
+.execution-line-glyph {
+  background: #a99dfb;
+  width: 4px !important;
+  margin-left: 4px;
 }

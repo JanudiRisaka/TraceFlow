@@ -1,6 +1,7 @@
 
-import { useEffect, useMemo, useState } from 'react'
-import Editor from '@monaco-editor/react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import Editor, { type OnMount } from '@monaco-editor/react'
+import type { editor } from 'monaco-editor'
 import './App.css'
 import { ExecutionWorkerClient } from './engine/worker/ExecutionWorkerClient'
 import type { ProgramExecutionResult } from './engine/execution/types'
@@ -24,6 +25,7 @@ console.log(result)`
 type CodeEditorPanelProps = {
   code: string
   onCodeChange: (value: string) => void
+  highlightedLine: number | null
 }
 
 type HeaderProps = {
@@ -69,8 +71,53 @@ function Header({ isRunning, onRun, onReset }: HeaderProps) {
 }
 
 
-function CodeEditorPanel({ code, onCodeChange }: CodeEditorPanelProps) {
+function CodeEditorPanel({
+  code,
+  onCodeChange,
+  highlightedLine,
+}: CodeEditorPanelProps) {
   const lineCount = code.split('\n').length
+
+  const [editorInstance, setEditorInstance] =
+    useState<editor.IStandaloneCodeEditor | null>(null)
+
+  const decorationIdsRef = useRef<string[]>([])
+
+  const handleEditorMount: OnMount = (editor) => {
+    setEditorInstance(editor)
+  }
+
+useEffect(() => {
+  if (!editorInstance) return
+
+  const newDecorations: editor.IModelDeltaDecoration[] =
+    highlightedLine === null
+      ? []
+      : [
+          {
+            range: {
+              startLineNumber: highlightedLine,
+              startColumn: 1,
+              endLineNumber: highlightedLine,
+              endColumn: 1,
+            },
+            options: {
+              isWholeLine: true,
+              className: 'execution-line-highlight',
+              glyphMarginClassName: 'execution-line-glyph',
+            },
+          },
+        ]
+
+  decorationIdsRef.current = editorInstance.deltaDecorations(
+    decorationIdsRef.current,
+    newDecorations,
+  )
+
+  if (highlightedLine !== null) {
+    editorInstance.revealLineInCenter(highlightedLine)
+  }
+}, [highlightedLine, editorInstance])
 
   return (
     <section className="panel editor-panel">
@@ -86,6 +133,7 @@ function CodeEditorPanel({ code, onCodeChange }: CodeEditorPanelProps) {
             language="javascript"
             theme="vs-dark"
             value={code}
+            onMount={handleEditorMount}
             onChange={(value) => onCodeChange(value ?? '')}
             options={{
               ariaLabel: 'JavaScript code editor',
@@ -101,6 +149,7 @@ function CodeEditorPanel({ code, onCodeChange }: CodeEditorPanelProps) {
                 top: 14,
                 bottom: 14,
               },
+              glyphMargin: true,
             }}
           />
         </div>
@@ -199,6 +248,32 @@ function formatRuntimeValue(value: RuntimeValueSnapshot): string {
   }
 }
 
+function getScopeDepth(
+  scopeId: number,
+  scopes: ExecutionSnapshot['scopes'],
+): number {
+  const scope = scopes.find((item) => item.scopeId === scopeId)
+
+  if (!scope) return 0
+
+  let depth = 0
+  let parentId = scope.parentScopeId
+
+  while (parentId !== null) {
+    depth += 1
+
+    const parent = scopes.find(
+      (item) => item.scopeId === parentId,
+    )
+
+    if (!parent) break
+
+    parentId = parent.parentScopeId
+  }
+
+  return depth
+}
+
 function VariablesPanel({
   snapshots,
   selectedEventIndex,
@@ -231,7 +306,16 @@ function VariablesPanel({
             </div>
           ) : (
             currentSnapshot.scopes.map((scope) => (
-              <div className="scope-group" key={scope.scopeId}>
+              <div
+                className="scope-group"
+                key={scope.scopeId}
+                style={{
+                  '--scope-depth': getScopeDepth(
+                    scope.scopeId,
+                    currentSnapshot.scopes,
+                  ),
+                } as React.CSSProperties}
+              >
                 <div className="scope-heading">
                   {scope.type === 'global'
                     ? 'Global Scope'
@@ -358,6 +442,12 @@ function App() {
 
   const events = executionResult?.events ?? []
 
+  const selectedEvent = events.find(
+    (event) => event.index === selectedEventIndex,
+  )
+
+  const highlightedLine = selectedEvent?.location?.line ?? null
+
   const workerClient = useMemo(
     () => new ExecutionWorkerClient(),
     [],
@@ -416,6 +506,7 @@ const handleNextStep = () => {
           <CodeEditorPanel
             code={code}
             onCodeChange={setCode}
+            highlightedLine={highlightedLine}
           />
           <OutputPanel result={executionResult} />
         </div>
