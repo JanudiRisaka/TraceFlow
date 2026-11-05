@@ -3,6 +3,7 @@ import {
   createUndefined,
   type RuntimeValue,
 } from './value'
+import type { ScopeMetadata } from '../trace/types'
 
 export type DeclarationKind = 'let' | 'const'
 
@@ -45,6 +46,8 @@ export class Environment {
 
   public readonly parent: Environment | null
 
+  public readonly metadata: ScopeMetadata
+
   getOwnBindings(): OwnBinding[] {
     return Array.from(this.bindings.entries()).map(
       ([name, binding]) => ({
@@ -56,8 +59,15 @@ export class Environment {
     )
   }
 
-  constructor(parent: Environment | null = null) {
+  constructor(
+    parent: Environment | null = null,
+    metadata: ScopeMetadata = {
+      type: parent === null ? 'global' : 'block',
+      name: parent === null ? 'Global' : 'Block',
+    },
+  ) {
     this.parent = parent
+    this.metadata = metadata
   }
 
   // Create a binding before evaluating its initializer.

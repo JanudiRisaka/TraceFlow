@@ -20,9 +20,18 @@ export type BindingSnapshot = {
   value: RuntimeValueSnapshot | null
 }
 
+export type ScopeType = 'global' | 'function' | 'block' | 'loop'
+
+export type ScopeMetadata = {
+  type: ScopeType
+  name: string
+}
+
 export type ScopeSnapshot = {
   scopeId: number
   parentScopeId: number | null
+  type: ScopeType
+  name: string
   bindings: BindingSnapshot[]
 }
 

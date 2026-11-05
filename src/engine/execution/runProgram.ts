@@ -13,7 +13,10 @@ import type { ProgramExecutionResult } from './types'
 
 export function runProgram(source: string): ProgramExecutionResult {
   const context = createExecutionContext()
-  const environment = new Environment()
+  const environment = new Environment(null, {
+    type: 'global',
+    name: 'Global',
+  })
 
   // Stage 1: Parse the source code.
   const parseResult = parseJavaScript(source)

@@ -55,6 +55,8 @@ export class ExecutionSnapshotRecorder {
       return {
         scopeId: this.getScopeId(current),
         parentScopeId: parent ? this.getScopeId(parent) : null,
+        type: current.metadata.type,
+        name: current.metadata.name,
         bindings: current.getOwnBindings().map((binding) => ({
           name: binding.name,
           kind: binding.mutable ? 'let' : 'const',

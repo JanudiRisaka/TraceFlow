@@ -233,9 +233,14 @@ function VariablesPanel({
             currentSnapshot.scopes.map((scope) => (
               <div className="scope-group" key={scope.scopeId}>
                 <div className="scope-heading">
-                  Scope #{scope.scopeId}
+                  {scope.type === 'global'
+                    ? 'Global Scope'
+                    : scope.type === 'function'
+                      ? `Function Scope — ${scope.name}`
+                      : scope.type === 'loop'
+                        ? `Loop Scope — ${scope.name}`
+                        : 'Block Scope'}
                 </div>
-
                 {scope.bindings.length === 0 ? (
                   <p className="scope-empty">No bindings</p>
                 ) : (

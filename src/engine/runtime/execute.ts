@@ -172,7 +172,10 @@ function invokeFunction(
     source: getSourceLocation(fn.declaration),
   }
 
-  const functionEnvironment = new Environment(fn.closure)
+  const functionEnvironment = new Environment(fn.closure, {
+  type: 'function',
+  name: functionName,
+})
 
   try {
     // Initialize function parameters.
@@ -398,14 +401,18 @@ case 'ExpressionStatement': {
   return
 }
 
-    case 'BlockStatement': {
-    const blockEnvironment = new Environment(environment)
+case 'BlockStatement': {
+  const blockEnvironment = new Environment(environment, {
+    type: 'block',
+    name: 'Block',
+  })
 
-    for (const bodyStatement of statement.body) {
-        executeStatement(bodyStatement, blockEnvironment, context)  }
+  for (const bodyStatement of statement.body) {
+    executeStatement(bodyStatement, blockEnvironment, context)
+  }
 
-    return
-    }
+  return
+}
 
 case 'IfStatement': {
   const condition = evaluateExpression(
@@ -448,7 +455,10 @@ case 'IfStatement': {
 }
 
     case 'ForStatement': {
-      const loopEnvironment = new Environment(environment)
+      const loopEnvironment = new Environment(environment, {
+        type: 'loop',
+        name: 'For loop',
+      })
 
       // Execute the initializer once, if one exists.
       if (statement.init !== null && statement.init !== undefined) {
