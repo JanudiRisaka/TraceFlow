@@ -6,6 +6,7 @@ import {
   createNull,
   createNumber,
   createString,
+  createUndefined,
   type RuntimeValue,
   type FunctionRuntimeValue,
 } from './value'
@@ -20,6 +21,11 @@ export type AssignmentObserver = (
   name: string,
   previousValue: RuntimeValue,
   newValue: RuntimeValue,
+  location: SourceLocation | null,
+) => void
+
+export type ConsoleOutputHandler = (
+  values: RuntimeValue[],
   location: SourceLocation | null,
 ) => void
 
@@ -284,6 +290,7 @@ export function evaluateExpression(
   environment: Environment,
   invokeFunction?: FunctionInvoker,
   onAssignment?: AssignmentObserver,
+  onConsoleOutput?: ConsoleOutputHandler,
 ): RuntimeValue {
   const node = asExpression(expression)
 
@@ -319,12 +326,15 @@ export function evaluateExpression(
         environment,
         invokeFunction,
         onAssignment,
+        onConsoleOutput,
       )
 
       const right = evaluateExpression(
         node.right as Expression,
         environment,
         invokeFunction,
+        onAssignment,
+        onConsoleOutput,
       )
 
       if (typeof node.operator !== 'string') {
@@ -450,35 +460,84 @@ export function evaluateExpression(
     }
 
     case 'CallExpression': {
-  if (invokeFunction === undefined) {
-    throw new RuntimeError(
-      'Function invocation is not available in this execution context.',
-      'UNSUPPORTED_EXPRESSION',
-    )
-  }
+    const calleeNode = asExpression(node.callee)
 
-  const callee = evaluateExpression(
-    node.callee as Expression,
-    environment,
-    invokeFunction,
-    onAssignment,
-  )
+    // Support only the exact console.log(...) call.
+    if (calleeNode.type === 'MemberExpression') {
+      const object = asExpression(calleeNode.object)
+      const property = asExpression(calleeNode.property)
 
-  if (callee.type !== 'function') {
-    throw new RuntimeError(
-      'Only user-defined functions can be called.',
-      'INVALID_OPERAND_TYPES',
+      const isConsoleLog =
+        object.type === 'Identifier' &&
+        object.name === 'console' &&
+        property.type === 'Identifier' &&
+        property.name === 'log' &&
+        calleeNode.computed === false &&
+        calleeNode.optional !== true
+
+      if (isConsoleLog) {
+        if (onConsoleOutput === undefined) {
+          throw new RuntimeError(
+            'Console output is not available in this execution context.',
+            'UNSUPPORTED_EXPRESSION',
+          )
+        }
+
+        const argumentsList = node.arguments as Expression[]
+
+        const args = argumentsList.map((argument) =>
+          evaluateExpression(
+            argument,
+            environment,
+            invokeFunction,
+            onAssignment,
+            onConsoleOutput,
+          ),
+        )
+
+        onConsoleOutput(args, getExpressionLocation(node))
+
+        return createUndefined()
+      }
+    }
+
+    // Normal user-defined function calls.
+    if (invokeFunction === undefined) {
+      throw new RuntimeError(
+        'Function invocation is not available in this execution context.',
+        'UNSUPPORTED_EXPRESSION',
+      )
+    }
+
+    const callee = evaluateExpression(
+      node.callee as Expression,
+      environment,
+      invokeFunction,
+      onAssignment,
+      onConsoleOutput,
     )
-  }
+
+    if (callee.type !== 'function') {
+      throw new RuntimeError(
+        'Only user-defined functions can be called.',
+        'INVALID_OPERAND_TYPES',
+      )
+    }
 
   const argumentsList = node.arguments as Expression[]
 
   const args = argumentsList.map((argument) =>
-    evaluateExpression(argument, environment, invokeFunction, onAssignment),
+    evaluateExpression(
+      argument,
+      environment,
+      invokeFunction,
+      onAssignment,
+      onConsoleOutput,
+    ),
   )
 
   return invokeFunction(callee, args)
-}
+    }
 
     default:
       throw new RuntimeError(

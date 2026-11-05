@@ -6,6 +6,7 @@ import {
   isTruthy,
   type FunctionInvoker,
   type AssignmentObserver,
+  type ConsoleOutputHandler,
 } from './evaluate'
 import {
   createFunction,
@@ -24,7 +25,7 @@ import type {
   SourceLocation,
   ExecutionEvent,
 } from '../trace/types'
-
+import { ConsoleOutputRecorder } from '../trace/ConsoleOutputRecorder'
 
 export type ExecutionContext = {
   // Loop limits
@@ -38,6 +39,7 @@ export type ExecutionContext = {
   // Execution history
   eventRecorder: ExecutionRecorder
   snapshotRecorder: ExecutionSnapshotRecorder
+  consoleOutputRecorder: ConsoleOutputRecorder
 
   // Active function calls
   callStack: CallFrameSnapshot[]
@@ -57,6 +59,7 @@ export function createExecutionContext(): ExecutionContext {
 
     eventRecorder: new ExecutionRecorder(),
     snapshotRecorder: new ExecutionSnapshotRecorder(),
+    consoleOutputRecorder: new ConsoleOutputRecorder(),
 
     callStack: [],
     nextFrameId: 1,
@@ -286,6 +289,23 @@ export function executeStatement(
   )
 }
 
+const onConsoleOutput: ConsoleOutputHandler = (values, location) => {
+  const outputEntry = context.consoleOutputRecorder.record(
+    values,
+    location,
+  )
+
+  recordExecutionEvent(
+    context,
+    {
+      type: 'console-output',
+      location,
+      values: outputEntry.values,
+    },
+    environment,
+  )
+}
+
   switch (statement.type) {
 case 'VariableDeclaration': {
   const declaration =
@@ -347,6 +367,7 @@ case 'VariableDeclaration': {
             environment,
             callFunction,
             onAssignment,
+            onConsoleOutput,
           )
 
     environment.initialize(name, value)
@@ -372,6 +393,7 @@ case 'ExpressionStatement': {
     environment,
     callFunction,
     onAssignment,
+    onConsoleOutput,
   )
   return
 }
@@ -391,6 +413,7 @@ case 'IfStatement': {
     environment,
     callFunction,
     onAssignment,
+    onConsoleOutput,
   )
 
   const branch = isTruthy(condition) ? 'consequent' : 'alternate'
@@ -437,6 +460,7 @@ case 'IfStatement': {
             loopEnvironment,
             callFunction,
             onAssignment,
+            onConsoleOutput,
           )
         }
       }
@@ -451,6 +475,7 @@ case 'IfStatement': {
           loopEnvironment,
           callFunction,
           onAssignment,
+          onConsoleOutput,
         ),
       )
       ) {
@@ -489,6 +514,7 @@ case 'IfStatement': {
             loopEnvironment,
             callFunction,
             onAssignment,
+            onConsoleOutput,
           )
         }
       }
@@ -524,6 +550,7 @@ case 'IfStatement': {
               environment,
               callFunction,
               onAssignment,
+              onConsoleOutput,
             )
 
         throw new ReturnSignal(

@@ -1,7 +1,10 @@
 
-import { useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Editor from '@monaco-editor/react'
 import './App.css'
+import { ExecutionWorkerClient } from './engine/worker/ExecutionWorkerClient'
+import type { ProgramExecutionResult } from './engine/execution/types'
+import { ExecutionTimeline } from './components/ExecutionTimeline'
 
 const initialCode = `let score = 10
 let bonus = 5
@@ -19,7 +22,13 @@ type CodeEditorPanelProps = {
   onCodeChange: (value: string) => void
 }
 
-function Header() {
+type HeaderProps = {
+  isRunning: boolean
+  onRun: () => void
+  onReset: () => void
+}
+
+function Header({ isRunning, onRun, onReset }: HeaderProps) {
   return (
     <header className="app-header">
       <div className="brand">
@@ -32,16 +41,29 @@ function Header() {
 
       <div className="header-actions">
         <span className="file-name">untitled.js</span>
-        <button className="button button-secondary" type="button" disabled>
+
+        <button
+          className="button button-secondary"
+          type="button"
+          onClick={onReset}
+          disabled={isRunning}
+        >
           Reset
         </button>
-        <button className="button button-primary" type="button" disabled>
-          ▶ Run
+
+        <button
+          className="button button-primary"
+          type="button"
+          onClick={onRun}
+          disabled={isRunning}
+        >
+          {isRunning ? 'Running...' : '▶ Run'}
         </button>
       </div>
     </header>
   )
 }
+
 
 function CodeEditorPanel({ code, onCodeChange }: CodeEditorPanelProps) {
   const lineCount = code.split('\n').length
@@ -88,28 +110,64 @@ function CodeEditorPanel({ code, onCodeChange }: CodeEditorPanelProps) {
   )
 }
 
-function ExecutionPanel() {
+
+type ExecutionPanelProps = {
+  events: import('./engine/trace/types').ExecutionEvent[]
+  selectedIndex: number
+  onSelect: (index: number) => void
+  onPrevious: () => void
+  onNext: () => void
+}
+
+function ExecutionPanel({
+  events,
+  selectedIndex,
+  onSelect,
+  onPrevious,
+  onNext,
+}: ExecutionPanelProps) {
   return (
     <section className="panel execution-panel">
       <div className="panel-header">
         <h2>Execution trace</h2>
-        <span className="status-badge">Not started</span>
+        <span className="status-badge">
+          {events.length > 0 ? 'Completed' : 'Not started'}
+        </span>
       </div>
 
-      <div className="empty-state">
-        <div className="empty-icon">▷</div>
-        <h3>No execution yet</h3>
-        <p>Run your JavaScript code to see its execution step by step.</p>
-      </div>
+      <ExecutionTimeline
+        events={events}
+        selectedIndex={selectedIndex}
+        onSelect={onSelect}
+      />
 
       <div className="timeline-controls">
-        <button type="button" disabled aria-label="Previous step">◀</button>
-        <span>Step 0 of 0</span>
-        <button type="button" disabled aria-label="Next step">▶</button>
+        <button
+          type="button"
+          onClick={onPrevious}
+          disabled={selectedIndex <= 0 || events.length === 0}
+          aria-label="Previous step"
+        >
+          ◀
+        </button>
+
+        <span>
+          Step {events.length > 0 ? selectedIndex + 1 : 0} of {events.length}
+        </span>
+
+        <button
+          type="button"
+          onClick={onNext}
+          disabled={selectedIndex >= events.length - 1 || events.length === 0}
+          aria-label="Next step"
+        >
+          ▶
+        </button>
       </div>
     </section>
   )
 }
+
 
 function VariablesPanel() {
   return (
@@ -126,7 +184,40 @@ function VariablesPanel() {
   )
 }
 
-function OutputPanel() {
+
+type OutputPanelProps = {
+  result: ProgramExecutionResult | null
+}
+
+
+function formatOutputValue(value: {
+  type: string
+  value?: string | number | boolean | null
+}): string {
+  if (value.type === 'undefined') {
+    return 'undefined'
+  }
+
+  if (value.type === 'null') {
+    return 'null'
+  }
+
+  if (value.type === 'string') {
+    return String(value.value)
+  }
+
+  return String(value.value)
+}
+
+function OutputPanel({ result }: OutputPanelProps) {
+  let status = 'Waiting for execution...'
+
+  if (result?.ok === true) {
+    status = 'Execution completed successfully.'
+  } else if (result?.ok === false) {
+    status = `Execution failed (${result.error.phase}): ${result.error.message}`
+  }
+
   return (
     <section className="panel output-panel">
       <div className="panel-header">
@@ -135,19 +226,95 @@ function OutputPanel() {
       </div>
 
       <div className="output-content">
-        <span className="output-prompt">&gt;</span>
-        <span>Waiting for execution...</span>
+        {result === null ? (
+          <span className="output-message">{status}</span>
+        ) : (
+          <>
+            {result.output.map((entry) => (
+              <div className="output-line" key={entry.index}>
+                <span className="output-prompt">&gt;</span>
+
+                <span>
+                  {entry.values
+                    .map(formatOutputValue)
+                    .join(' ')}
+                </span>
+              </div>
+            ))}
+
+            <div className="output-status">
+              {status}
+            </div>
+          </>
+        )}
       </div>
     </section>
   )
 }
 
+
+
 function App() {
   const [code, setCode] = useState<string>(initialCode)
+  const [executionResult, setExecutionResult] =
+    useState<ProgramExecutionResult | null>(null)
+  const [isRunning, setIsRunning] = useState(false)
+  const [selectedEventIndex, setSelectedEventIndex] = useState(0)
+
+  const events = executionResult?.events ?? []
+
+  const workerClient = useMemo(
+    () => new ExecutionWorkerClient(),
+    [],
+  )
+
+  useEffect(() => {
+    return () => {
+      workerClient.terminate()
+    }
+  }, [workerClient])
+
+
+  const handleRun = async () => {
+    setIsRunning(true)
+    setExecutionResult(null)
+    setSelectedEventIndex(0)
+
+    try {
+      const result = await workerClient.run(code)
+      setExecutionResult(result)
+    } catch (error: unknown) {
+      console.error('Worker execution failed:', error)
+    } finally {
+      setIsRunning(false)
+    }
+  }
+
+  const handleReset = () => {
+    workerClient.terminate()
+    setCode(initialCode)
+    setExecutionResult(null)
+    setSelectedEventIndex(0)
+    setIsRunning(false)
+  }
+
+  const handlePreviousStep = () => {
+  setSelectedEventIndex((current) => Math.max(0, current - 1))
+}
+
+const handleNextStep = () => {
+  setSelectedEventIndex((current) =>
+    Math.min(events.length - 1, current + 1),
+  )
+}
 
   return (
     <div className="app-shell">
-      <Header />
+      <Header
+        isRunning={isRunning}
+        onRun={handleRun}
+        onReset={handleReset}
+      />
 
       <main className="workspace">
         <div className="left-column">
@@ -155,11 +322,18 @@ function App() {
             code={code}
             onCodeChange={setCode}
           />
-          <OutputPanel />
+          <OutputPanel result={executionResult} />
         </div>
 
         <div className="right-column">
-          <ExecutionPanel />
+          <ExecutionPanel
+            events={events}
+            selectedIndex={selectedEventIndex}
+            onSelect={setSelectedEventIndex}
+            onPrevious={handlePreviousStep}
+            onNext={handleNextStep}
+          />
+
           <VariablesPanel />
         </div>
       </main>

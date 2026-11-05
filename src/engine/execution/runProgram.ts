@@ -18,7 +18,8 @@ export function runProgram(source: string): ProgramExecutionResult {
   // Stage 1: Parse the source code.
   const parseResult = parseJavaScript(source)
 
-  if (parseResult.ok === false) {    return {
+  if (parseResult.ok === false) {
+    return {
       ok: false,
       error: {
         phase: 'parse',
@@ -27,6 +28,7 @@ export function runProgram(source: string): ProgramExecutionResult {
       },
       events: [],
       snapshots: [],
+      output: [],
     }
   }
 
@@ -43,6 +45,7 @@ export function runProgram(source: string): ProgramExecutionResult {
       },
       events: [],
       snapshots: [],
+      output: [],
     }
   }
 
@@ -91,6 +94,7 @@ export function runProgram(source: string): ProgramExecutionResult {
       ok: true,
       events: context.eventRecorder.getEvents(),
       snapshots: context.snapshotRecorder.getSnapshots(),
+      output: context.consoleOutputRecorder.getEntries(),
     }
   } catch (error: unknown) {
     const message =
@@ -129,6 +133,7 @@ export function runProgram(source: string): ProgramExecutionResult {
       },
       events: context.eventRecorder.getEvents(),
       snapshots: context.snapshotRecorder.getSnapshots(),
+      output: context.consoleOutputRecorder.getEntries(),
     }
   }
 }

@@ -69,6 +69,34 @@ function isAstNode(value: unknown): value is AstNode {
   )
 }
 
+function isAllowedConsoleLogCall(
+  node: AstNode,
+  parent: AstNode | null,
+): boolean {
+  if (
+    parent === null ||
+    parent.type !== 'CallExpression' ||
+    parent.callee !== node
+  ) {
+    return false
+  }
+
+  const object = node.object
+  const property = node.property
+
+  return (
+    node.computed === false &&
+    node.optional !== true &&
+    isAstNode(object) &&
+    object.type === 'Identifier' &&
+    object.name === 'console' &&
+    isAstNode(property) &&
+    property.type === 'Identifier' &&
+    property.name === 'log' &&
+    parent.optional !== true
+  )
+}
+
 export function validateJavaScript(ast: Program): ValidationResult {
   const diagnostics: ValidationDiagnostic[] = []
 
@@ -87,9 +115,12 @@ export function validateJavaScript(ast: Program): ValidationResult {
     })
   }
 
-  function visit(value: unknown) {
+  function visit(
+    value: unknown,
+    parent: AstNode | null = null,
+  ) {
     if (Array.isArray(value)) {
-      value.forEach(visit)
+      value.forEach((item) => visit(item, parent))
       return
     }
 
@@ -99,13 +130,30 @@ export function validateJavaScript(ast: Program): ValidationResult {
 
     const node = value
 
-    if (!supportedNodeTypes.has(node.type)) {
-      addDiagnostic(
-        node,
-        'UNSUPPORTED_SYNTAX',
-        `TraceFlow does not support "${node.type}" syntax yet.`,
-      )
-    }
+    if (
+  node.type === 'MemberExpression' &&
+  !isAllowedConsoleLogCall(node, parent)
+) {
+  addDiagnostic(
+    node,
+    'UNSUPPORTED_SYNTAX',
+    'TraceFlow only supports console.log() for member expressions.',
+  )
+}
+
+    const isAllowedMemberExpression =
+  node.type === 'MemberExpression' &&
+  isAllowedConsoleLogCall(node, parent)
+
+if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
+  addDiagnostic(
+    node,
+    'UNSUPPORTED_SYNTAX',
+    node.type === 'MemberExpression'
+      ? 'TraceFlow only supports console.log() for member expressions.'
+      : `TraceFlow does not support "${node.type}" syntax yet.`,
+  )
+}
 
     if (
       node.type === 'VariableDeclaration' &&
@@ -177,7 +225,7 @@ export function validateJavaScript(ast: Program): ValidationResult {
     // Inspect child nodes too. This catches unsupported syntax nested
     // inside otherwise supported statements and expressions.
     for (const child of Object.values(node)) {
-      visit(child)
+      visit(child, node)
     }
   }
 

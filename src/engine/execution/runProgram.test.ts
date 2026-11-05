@@ -23,6 +23,7 @@ describe('runProgram', () => {
       expect(result.error.phase).toBe('parse')
       expect(result.events).toHaveLength(0)
       expect(result.snapshots).toHaveLength(0)
+      expect(result.output).toHaveLength(0)
     }
   })
 
@@ -34,6 +35,7 @@ describe('runProgram', () => {
     if (result.ok === false) {
       expect(result.error.phase).toBe('validation')
       expect(result.events).toHaveLength(0)
+      expect(result.output).toHaveLength(0)
     }
   })
 
@@ -57,11 +59,11 @@ describe('runProgram', () => {
     if (result.ok === false) {
       expect(result.error.phase).toBe('runtime')
 
-    if (result.error.phase === 'runtime') {
-      expect(result.error.code).toBe('CONST_ASSIGNMENT')
-    } else {
-      throw new Error('Expected a runtime error')
-    }
+      if (result.error.phase === 'runtime') {
+        expect(result.error.code).toBe('CONST_ASSIGNMENT')
+      } else {
+        throw new Error('Expected a runtime error')
+      }
 
       expect(result.events[result.events.length - 1].type)
         .toBe('execution-error')
@@ -93,4 +95,136 @@ describe('runProgram', () => {
       })
     }
   })
+
+  // Console output tests
+
+  it('captures string output from console.log', () => {
+    const result = runProgram('console.log("Hello");')
+
+    expect(result.ok).toBe(true)
+
+    if (result.ok === true) {
+      expect(result.output).toHaveLength(1)
+      expect(result.output[0].values).toEqual([
+        { type: 'string', value: 'Hello' },
+      ])
+    }
+  })
+
+  it('captures number output from console.log', () => {
+    const result = runProgram('console.log(10);')
+
+    expect(result.ok).toBe(true)
+
+    if (result.ok === true) {
+      expect(result.output[0].values).toEqual([
+        { type: 'number', value: 10 },
+      ])
+    }
+  })
+
+  it('captures variable values from console.log', () => {
+    const result = runProgram(`
+      let score = 25;
+      console.log(score);
+    `)
+
+    expect(result.ok).toBe(true)
+
+    if (result.ok === true) {
+      expect(result.output[0].values).toEqual([
+        { type: 'number', value: 25 },
+      ])
+    }
+  })
+
+  it('preserves the order of multiple console.log calls', () => {
+    const result = runProgram(`
+      console.log("First");
+      console.log("Second");
+      console.log("Third");
+    `)
+
+    expect(result.ok).toBe(true)
+
+    if (result.ok === true) {
+      expect(result.output).toHaveLength(3)
+
+      expect(result.output.map((entry) => entry.values[0])).toEqual([
+        { type: 'string', value: 'First' },
+        { type: 'string', value: 'Second' },
+        { type: 'string', value: 'Third' },
+      ])
+    }
+  })
+
+  it('captures console.log output inside a function', () => {
+    const result = runProgram(`
+      function greet(name) {
+        console.log("Hello", name);
+      }
+
+      greet("TraceFlow");
+    `)
+
+    expect(result.ok).toBe(true)
+
+    if (result.ok === true) {
+      expect(result.output).toHaveLength(1)
+      expect(result.output[0].values).toEqual([
+        { type: 'string', value: 'Hello' },
+        { type: 'string', value: 'TraceFlow' },
+      ])
+    }
+  })
+
+  it('preserves console output before a runtime error', () => {
+    const result = runProgram(`
+      console.log("Before error");
+      const score = 10;
+      score = 20;
+    `)
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+      expect(result.error.phase).toBe('runtime')
+      expect(result.output).toHaveLength(1)
+      expect(result.output[0].values).toEqual([
+        { type: 'string', value: 'Before error' },
+      ])
+    }
+  })
+
+
+it('records console output as an execution event', () => {
+  const result = runProgram(`
+    let score = 10
+    console.log(score)
+  `)
+
+  expect(result.ok).toBe(true)
+
+  if (result.ok === true) {
+    const outputEvent = result.events.find(
+      (event) => event.type === 'console-output',
+    )
+
+    expect(outputEvent).toBeDefined()
+
+    if (outputEvent?.type === 'console-output') {
+      expect(outputEvent.values).toEqual([
+        { type: 'number', value: 10 },
+      ])
+    }
+
+    const outputSnapshot = result.snapshots.find(
+      (snapshot) =>
+        result.events[snapshot.eventIndex]?.type === 'console-output',
+    )
+
+    expect(outputSnapshot).toBeDefined()
+  }
+})
+
 })

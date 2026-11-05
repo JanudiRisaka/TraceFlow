@@ -87,6 +87,10 @@ export type ExecutionEvent =
       value: RuntimeValueSnapshot
     })
   | (BaseExecutionEvent & {
+    type: 'console-output'
+    values: RuntimeValueSnapshot[]
+  })
+  | (BaseExecutionEvent & {
       type: 'execution-error'
       message: string
       code: string

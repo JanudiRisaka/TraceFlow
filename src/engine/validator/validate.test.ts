@@ -98,4 +98,76 @@ describe('validateJavaScript', () => {
       expect(result.diagnostics[0].line).toBe(3)
     }
   })
+
+
+  it('accepts console.log with a string argument', () => {
+    const result = validateSource(`
+      console.log("Hello");
+    `)
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('accepts console.log with a number argument', () => {
+    const result = validateSource(`
+      console.log(10);
+    `)
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('accepts console.log with a variable argument', () => {
+    const result = validateSource(`
+      let score = 10;
+      console.log(score);
+    `)
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('accepts console.log inside a function', () => {
+    const result = validateSource(`
+      function greet(name) {
+        console.log("Hello", name);
+      }
+
+      greet("TraceFlow");
+    `)
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('rejects console.error', () => {
+    const result = validateSource(`
+      console.error("Hello");
+    `)
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects computed console property access', () => {
+    const result = validateSource(`
+      console["log"]("Hello");
+    `)
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects console.log without calling it', () => {
+    const result = validateSource(`
+      console.log;
+    `)
+
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects arbitrary object property access', () => {
+    const result = validateSource(`
+      window.location;
+    `)
+
+    expect(result.ok).toBe(false)
+  })
+
+  
 })
