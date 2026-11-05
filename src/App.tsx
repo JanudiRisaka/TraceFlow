@@ -5,6 +5,10 @@ import './App.css'
 import { ExecutionWorkerClient } from './engine/worker/ExecutionWorkerClient'
 import type { ProgramExecutionResult } from './engine/execution/types'
 import { ExecutionTimeline } from './components/ExecutionTimeline'
+import type {
+  ExecutionSnapshot,
+  RuntimeValueSnapshot,
+} from './engine/trace/types'
 
 const initialCode = `let score = 10
 let bonus = 5
@@ -169,20 +173,106 @@ function ExecutionPanel({
 }
 
 
-function VariablesPanel() {
+
+type VariablesPanelProps = {
+  snapshots: ExecutionSnapshot[]
+  selectedEventIndex: number
+}
+
+function formatRuntimeValue(value: RuntimeValueSnapshot): string {
+  switch (value.type) {
+    case 'string':
+      return `"${value.value}"`
+
+    case 'number':
+    case 'boolean':
+      return String(value.value)
+
+    case 'null':
+      return 'null'
+
+    case 'undefined':
+      return 'undefined'
+
+    case 'function':
+      return `ƒ ${value.name}`
+  }
+}
+
+function VariablesPanel({
+  snapshots,
+  selectedEventIndex,
+}: VariablesPanelProps) {
+  const currentSnapshot = snapshots.find(
+    (snapshot) => snapshot.eventIndex === selectedEventIndex,
+  )
+
   return (
     <section className="panel variables-panel">
       <div className="panel-header">
         <h2>Variables</h2>
-        <span className="panel-label">Current state</span>
+        <span className="panel-label">
+          {currentSnapshot ? 'Historical state' : 'No state'}
+        </span>
       </div>
 
-      <div className="empty-state compact">
-        <p>Variables will appear here during execution.</p>
-      </div>
+      {!currentSnapshot ? (
+        <div className="empty-state compact">
+          <p>
+            Run your code and select an execution event
+            to inspect variables.
+          </p>
+        </div>
+      ) : (
+        <div className="variables-content">
+          {currentSnapshot.scopes.length === 0 ? (
+            <div className="empty-state compact">
+              <p>No variables in this execution state.</p>
+            </div>
+          ) : (
+            currentSnapshot.scopes.map((scope) => (
+              <div className="scope-group" key={scope.scopeId}>
+                <div className="scope-heading">
+                  Scope #{scope.scopeId}
+                </div>
+
+                {scope.bindings.length === 0 ? (
+                  <p className="scope-empty">No bindings</p>
+                ) : (
+                  scope.bindings.map((binding) => (
+                    <div
+                      className="variable-row"
+                      key={`${scope.scopeId}-${binding.name}`}
+                    >
+                      <div className="variable-info">
+                        <span className="variable-name">
+                          {binding.name}
+                        </span>
+
+                        <span className="variable-kind">
+                          {binding.kind}
+                        </span>
+                      </div>
+
+                      <span className="variable-value">
+                        {!binding.initialized
+                          ? '<uninitialized>'
+                          : binding.value
+                            ? formatRuntimeValue(binding.value)
+                            : '<no value>'}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            ))
+          )}
+        </div>
+      )}
     </section>
   )
 }
+
 
 
 type OutputPanelProps = {
@@ -334,7 +424,10 @@ const handleNextStep = () => {
             onNext={handleNextStep}
           />
 
-          <VariablesPanel />
+          <VariablesPanel
+            snapshots={executionResult?.snapshots ?? []}
+            selectedEventIndex={selectedEventIndex}
+          />
         </div>
       </main>
 
