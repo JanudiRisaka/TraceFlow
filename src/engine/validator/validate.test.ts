@@ -1,7 +1,7 @@
-
 import { describe, expect, it } from 'vitest'
 import { parseJavaScript } from '../parser/parse'
 import { validateJavaScript } from './validate'
+import { RESOURCE_LIMITS } from '../resourceLimits'
 
 function validateSource(source: string) {
   const parseResult = parseJavaScript(source)
@@ -169,5 +169,46 @@ describe('validateJavaScript', () => {
     expect(result.ok).toBe(false)
   })
 
-  
+
+it('rejects AST nesting deeper than the configured limit', () => {
+  const source =
+    'let value = ' +
+    '!'.repeat(RESOURCE_LIMITS.maxAstDepth) +
+    'true;'
+
+  const result = validateSource(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(
+      result.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
+          diagnostic.message.includes('nesting depth'),
+      ),
+    ).toBe(true)
+  }
+})
+
+it('rejects ASTs exceeding the configured node count', () => {
+  const source = Array.from(
+  { length: 5_001 },
+  (_, index) => `let value${index} = 0;`,
+).join('\n')
+  const result = validateSource(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(
+      result.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
+          diagnostic.message.includes('node count'),
+      ),
+    ).toBe(true)
+  }
+})
+
 })

@@ -1,12 +1,11 @@
-
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { parseJavaScript } from '../parser/parse'
 import { Environment, RuntimeError } from './Environment'
 import { evaluateExpression } from './evaluate'
 import type { RuntimeValue } from './value'
 import { parse } from 'acorn'
 import type { Expression } from 'acorn'
-import { createNumber } from './value'
+import { createNumber, createFunction } from './value'
 
 
 function evaluate(source: string): RuntimeValue {
@@ -295,4 +294,102 @@ describe('evaluateExpression', () => {
     expect(result).toEqual(createNumber(4))
     expect(environment.get('count')).toEqual(createNumber(4))
   })
+
+it('counts operations in unary expressions', () => {
+  const onOperation = vi.fn()
+
+  evaluateExpression(
+    parseExpression('!!true'),
+    new Environment(),
+    undefined,
+    undefined,
+    undefined,
+    onOperation,
+  )
+
+  expect(onOperation).toHaveBeenCalledTimes(3)
+})
+
+it('counts operations in nested binary expressions', () => {
+  const onOperation = vi.fn()
+
+  evaluateExpression(
+    parseExpression('1 + (2 * 3)'),
+    new Environment(),
+    undefined,
+    undefined,
+    undefined,
+    onOperation,
+  )
+
+  expect(onOperation).toHaveBeenCalledTimes(5)
+})
+
+it('counts operations in assignment expressions', () => {
+  const environment = new Environment()
+  environment.declare('value', 'let')
+  environment.initialize('value', createNumber(0))
+
+  const onOperation = vi.fn()
+
+  evaluateExpression(
+    parseExpression('value = 1 + 2'),
+    environment,
+    undefined,
+    undefined,
+    undefined,
+    onOperation,
+  )
+
+  // Assignment + binary expression + two literals.
+  expect(onOperation).toHaveBeenCalledTimes(4)
+})
+
+it('counts operations in function calls and arguments', () => {
+  const environment = new Environment()
+  const declaration = parseJavaScript(
+    'function add(a, b) { return a + b; }',
+  )
+
+  if (declaration.ok === false) {
+    throw new Error('Invalid function declaration in test.')
+  }
+
+  const functionDeclaration = declaration.ast.body[0]
+
+  if (
+    !functionDeclaration ||
+    functionDeclaration.type !== 'FunctionDeclaration'
+  ) {
+    throw new Error('Expected a function declaration.')
+  }
+
+  environment.declare('add', 'let')
+  environment.initialize(
+    'add',
+    createFunction(functionDeclaration, environment),
+  )
+
+  const onOperation = vi.fn()
+
+  const result = evaluateExpression(
+    parseExpression('add(1 + 2, 3)'),
+    environment,
+    (fn, args) => {
+      expect(fn.type).toBe('function')
+      expect(args).toEqual([
+        createNumber(3),
+        createNumber(3),
+      ])
+      return createNumber(6)
+    },
+    undefined,
+    undefined,
+    onOperation,
+  )
+
+  expect(result).toEqual(createNumber(6))
+  expect(onOperation).toHaveBeenCalledTimes(6)
+})
+
 })

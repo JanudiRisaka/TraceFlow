@@ -1,8 +1,12 @@
-
 import type { Program } from 'acorn'
+import { RESOURCE_LIMITS } from '../resourceLimits'
 
 export type ValidationDiagnostic = {
-  code: 'UNSUPPORTED_SYNTAX' | 'UNSUPPORTED_OPERATOR' | 'UNSUPPORTED_FEATURE'
+  code:
+  | 'UNSUPPORTED_SYNTAX'
+  | 'UNSUPPORTED_OPERATOR'
+  | 'UNSUPPORTED_FEATURE'
+  | 'RESOURCE_LIMIT_EXCEEDED'
   message: string
   nodeType: string
   line: number | null
@@ -97,6 +101,7 @@ function isAllowedConsoleLogCall(
   )
 }
 
+
 export function validateJavaScript(ast: Program): ValidationResult {
   const diagnostics: ValidationDiagnostic[] = []
 
@@ -110,51 +115,75 @@ export function validateJavaScript(ast: Program): ValidationResult {
       message,
       nodeType: node.type,
       line: node.loc?.start.line ?? null,
-      // Acorn columns start at 0. We report columns starting at 1.
       column: node.loc ? node.loc.start.column + 1 : null,
     })
   }
 
+  let nodeCount = 0
+  let resourceLimitExceeded = false
+
   function visit(
     value: unknown,
     parent: AstNode | null = null,
+    depth = 1,
   ) {
+    if (resourceLimitExceeded) return
+
     if (Array.isArray(value)) {
-      value.forEach((item) => visit(item, parent))
+      for (const item of value) {
+        visit(item, parent, depth)
+        if (resourceLimitExceeded) return
+      }
       return
     }
 
-    if (!isAstNode(value)) {
-      return
-    }
+    if (!isAstNode(value)) return
 
     const node = value
 
-    if (
-  node.type === 'MemberExpression' &&
-  !isAllowedConsoleLogCall(node, parent)
-) {
-  addDiagnostic(
-    node,
-    'UNSUPPORTED_SYNTAX',
-    'TraceFlow only supports console.log() for member expressions.',
-  )
-}
+    if (depth > RESOURCE_LIMITS.maxAstDepth) {
+      addDiagnostic(
+        node,
+        'RESOURCE_LIMIT_EXCEEDED',
+        `AST nesting depth exceeds the maximum allowed depth of ${RESOURCE_LIMITS.maxAstDepth}.`,
+      )
+      resourceLimitExceeded = true
+      return
+    }
 
-    const isAllowedMemberExpression =
-  node.type === 'MemberExpression' &&
-  isAllowedConsoleLogCall(node, parent)
+    nodeCount += 1
 
-if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
-  addDiagnostic(
-    node,
-    'UNSUPPORTED_SYNTAX',
-    node.type === 'MemberExpression'
-      ? 'TraceFlow only supports console.log() for member expressions.'
-      : `TraceFlow does not support "${node.type}" syntax yet.`,
-  )
-}
+    if (nodeCount > RESOURCE_LIMITS.maxAstNodes) {
+      addDiagnostic(
+        node,
+        'RESOURCE_LIMIT_EXCEEDED',
+        `AST node count exceeds the maximum allowed count of ${RESOURCE_LIMITS.maxAstNodes}.`,
+      )
+      resourceLimitExceeded = true
+      return
+    }
 
+    // Reject unsupported member access.
+    if (node.type === 'MemberExpression') {
+      if (!isAllowedConsoleLogCall(node, parent)) {
+        addDiagnostic(
+          node,
+          'UNSUPPORTED_FEATURE',
+          'Only direct console.log(...) calls are supported.',
+        )
+      }
+    }
+
+    // Reject unsupported AST node types.
+    if (!supportedNodeTypes.has(node.type) && node.type !== 'MemberExpression') {
+      addDiagnostic(
+        node,
+        'UNSUPPORTED_SYNTAX',
+        `The syntax "${node.type}" is not supported.`,
+      )
+    }
+
+    // Only let and const declarations are supported.
     if (
       node.type === 'VariableDeclaration' &&
       node.kind !== 'let' &&
@@ -163,10 +192,11 @@ if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
       addDiagnostic(
         node,
         'UNSUPPORTED_FEATURE',
-        'TraceFlow supports let and const declarations, but not var.',
+        'Only let and const declarations are supported.',
       )
     }
 
+    // Check binary operators.
     if (
       node.type === 'BinaryExpression' &&
       !supportedBinaryOperators.has(String(node.operator))
@@ -178,6 +208,7 @@ if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
       )
     }
 
+    // Check unary operators.
     if (
       node.type === 'UnaryExpression' &&
       !supportedUnaryOperators.has(String(node.operator))
@@ -189,6 +220,7 @@ if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
       )
     }
 
+    // Check update operators.
     if (
       node.type === 'UpdateExpression' &&
       !supportedUpdateOperators.has(String(node.operator))
@@ -200,6 +232,7 @@ if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
       )
     }
 
+    // Check assignment operators.
     if (
       node.type === 'AssignmentExpression' &&
       node.operator !== '='
@@ -211,6 +244,7 @@ if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
       )
     }
 
+    // Async and generator functions are not supported.
     if (
       node.type === 'FunctionDeclaration' &&
       (node.async === true || node.generator === true)
@@ -218,14 +252,14 @@ if (!supportedNodeTypes.has(node.type) && !isAllowedMemberExpression) {
       addDiagnostic(
         node,
         'UNSUPPORTED_FEATURE',
-        'TraceFlow supports synchronous functions, not async or generator functions.',
+        'Async and generator functions are not supported.',
       )
     }
 
-    // Inspect child nodes too. This catches unsupported syntax nested
-    // inside otherwise supported statements and expressions.
+    // Visit child nodes.
     for (const child of Object.values(node)) {
-      visit(child, node)
+      visit(child, node, depth + 1)
+      if (resourceLimitExceeded) return
     }
   }
 

@@ -306,6 +306,37 @@ context.maxLoopIterations = 3
     }).toThrow('loop iteration limit of 3 was reached')
   })
 
+
+it('throws when the operation limit is exceeded', () => {
+  const context = createExecutionContext()
+  context.maxOperations = 3
+
+  expect(() => {
+    executeSource(
+      'let value = 1 + 2;',
+      new Environment(),
+      context,
+    )
+  }).toThrow('operation limit of 3 was reached')
+
+  expect(context.operationCount).toBe(4)
+})
+
+it('counts operations across loop iterations', () => {
+  const context = createExecutionContext()
+  context.maxOperations = 6
+
+  expect(() => {
+    executeSource(
+      'let i = 0; for (i = 0; i < 5; i++) { let value = i; }',
+      new Environment(),
+      context,
+    )
+  }).toThrow('operation limit of 6 was reached')
+
+  expect(context.operationCount).toBe(7)
+})
+
   it('shares the iteration limit across nested loops', () => {
   const environment = new Environment()
   const parsed = parseJavaScript(`
@@ -335,6 +366,21 @@ context.maxLoopIterations = 3
       executeStatement(statement, environment, context)
     }
   }).toThrow('loop iteration limit of 3 was reached')
+})
+
+it('counts operations inside function calls', () => {
+  const context = createExecutionContext()
+  context.maxOperations = 6
+
+  expect(() => {
+    executeSource(
+      'function add(a, b) { return a + b; } let result = add(1, 2);',
+      new Environment(),
+      context,
+    )
+  }).toThrow('operation limit of 6 was reached')
+
+  expect(context.operationCount).toBe(7)
 })
 
   it('keeps the for loop initializer variable inside the loop scope', () => {

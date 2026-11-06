@@ -29,6 +29,8 @@ export type ConsoleOutputHandler = (
   location: SourceLocation | null,
 ) => void
 
+export type OperationCounter = () => void
+
 type AstExpression = {
   type: string
   [key: string]: unknown
@@ -291,7 +293,9 @@ export function evaluateExpression(
   invokeFunction?: FunctionInvoker,
   onAssignment?: AssignmentObserver,
   onConsoleOutput?: ConsoleOutputHandler,
+  onOperation?: OperationCounter,
 ): RuntimeValue {
+  onOperation?.()
   const node = asExpression(expression)
 
   switch (node.type) {
@@ -327,6 +331,7 @@ export function evaluateExpression(
         invokeFunction,
         onAssignment,
         onConsoleOutput,
+        onOperation,
       )
 
       const right = evaluateExpression(
@@ -335,6 +340,7 @@ export function evaluateExpression(
         invokeFunction,
         onAssignment,
         onConsoleOutput,
+        onOperation,
       )
 
       if (typeof node.operator !== 'string') {
@@ -357,6 +363,8 @@ export function evaluateExpression(
             environment,
             invokeFunction,
             onAssignment,
+            onConsoleOutput,
+            onOperation,
         )
 
       switch (node.operator) {
@@ -443,7 +451,9 @@ export function evaluateExpression(
         environment,
         invokeFunction,
         onAssignment,
-        )
+        onConsoleOutput,
+        onOperation,
+      )
 
       const previousValue = environment.get(left.name)
 
@@ -492,6 +502,7 @@ export function evaluateExpression(
             invokeFunction,
             onAssignment,
             onConsoleOutput,
+            onOperation,
           ),
         )
 
@@ -515,6 +526,7 @@ export function evaluateExpression(
       invokeFunction,
       onAssignment,
       onConsoleOutput,
+      onOperation,
     )
 
     if (callee.type !== 'function') {
@@ -533,7 +545,8 @@ export function evaluateExpression(
       invokeFunction,
       onAssignment,
       onConsoleOutput,
-    ),
+      onOperation,
+    )
   )
 
   return invokeFunction(callee, args)

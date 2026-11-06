@@ -127,7 +127,7 @@ test('keeps the main thread responsive during Worker execution', async ({ page }
         .run(`
           let total = 0
 
-          for (let i = 0; i < 10000; i++) {
+          for (let i = 0; i < 2000; i++) {
             total = total + 1
           }
         `)

@@ -62,4 +62,52 @@ describe('parseJavaScript', () => {
         expect(result.ast.body).toHaveLength(0)
         }
     })
+
+    it('accepts source code at the maximum byte limit', () => {
+    const source = ' '.repeat(100 * 1024)
+    const result = parseJavaScript(source)
+
+    expect(result.ok).toBe(true)
+    })
+
+    it('rejects source code exceeding the maximum byte limit', () => {
+    const source = ' '.repeat((100 * 1024) + 1)
+    const result = parseJavaScript(source)
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+        expect(result.error.message).toContain(
+        'Source code exceeds the maximum allowed size',
+        )
+    }
+    })
+
+    it('measures source size using UTF-8 bytes', () => {
+    // Each character occupies 3 bytes in UTF-8.
+    const source = 'あ'.repeat(34_134)
+    const result = parseJavaScript(source)
+
+    expect(result.ok).toBe(false)
+    })
+
+    it('returns an error for excessively nested expressions', () => {
+  const source =
+    'let value = ' +
+    '('.repeat(5_000) +
+    '1' +
+    ')'.repeat(5_000) +
+    ';'
+
+  const result = parseJavaScript(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(result.error.message).toContain(
+      'parser nesting limit',
+    )
+  }
+})
+
 })

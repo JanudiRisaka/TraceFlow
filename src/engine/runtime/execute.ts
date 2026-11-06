@@ -7,6 +7,7 @@ import {
   type FunctionInvoker,
   type AssignmentObserver,
   type ConsoleOutputHandler,
+  type OperationCounter,
 } from './evaluate'
 import {
   createFunction,
@@ -26,8 +27,12 @@ import type {
   ExecutionEvent,
 } from '../trace/types'
 import { ConsoleOutputRecorder } from '../trace/ConsoleOutputRecorder'
+import { RESOURCE_LIMITS } from '../resourceLimits'
 
 export type ExecutionContext = {
+  // Operation limits
+  operationCount: number
+  maxOperations: number
   // Loop limits
   loopIterations: number
   maxLoopIterations: number
@@ -60,6 +65,9 @@ const DEFAULT_MAX_FUNCTION_CALL_DEPTH = 100
 
 export function createExecutionContext(): ExecutionContext {
   return {
+    operationCount: 0,
+    maxOperations: RESOURCE_LIMITS.maxOperations,
+
     loopIterations: 0,
     maxLoopIterations: DEFAULT_MAX_LOOP_ITERATIONS,
 
@@ -75,6 +83,17 @@ export function createExecutionContext(): ExecutionContext {
     errorCallStack: null,
     activeEnvironments: [],
     errorEnvironments: null,
+  }
+}
+
+function consumeOperation(context: ExecutionContext): void {
+  context.operationCount += 1
+
+  if (context.operationCount > context.maxOperations) {
+    throw new RuntimeError(
+      `Execution stopped: the operation limit of ${context.maxOperations} was reached.`,
+      'EXECUTION_LIMIT_EXCEEDED',
+    )
   }
 }
 
@@ -313,8 +332,13 @@ export function executeStatement(
   environment: Environment,
   context: ExecutionContext = createExecutionContext(),
 ): void {
+  consumeOperation(context)
+
   const callFunction: FunctionInvoker = (fn, args) =>
     invokeFunction(fn, args, context)
+
+  const onOperation: OperationCounter = () =>
+    consumeOperation(context)
 
   const onAssignment: AssignmentObserver = (
   name,
@@ -414,6 +438,7 @@ case 'VariableDeclaration': {
             callFunction,
             onAssignment,
             onConsoleOutput,
+            onOperation,
           )
 
     environment.initialize(name, value)
@@ -440,6 +465,7 @@ case 'ExpressionStatement': {
     callFunction,
     onAssignment,
     onConsoleOutput,
+    onOperation,
   )
   return
 }
@@ -493,6 +519,7 @@ case 'IfStatement': {
     callFunction,
     onAssignment,
     onConsoleOutput,
+    onOperation,
   )
 
   const branch = isTruthy(condition) ? 'consequent' : 'alternate'
@@ -543,6 +570,7 @@ case 'IfStatement': {
             callFunction,
             onAssignment,
             onConsoleOutput,
+            onOperation,
           )
         }
       }
@@ -558,6 +586,7 @@ case 'IfStatement': {
           callFunction,
           onAssignment,
           onConsoleOutput,
+          onOperation,
         ),
       )
       ) {
@@ -597,6 +626,7 @@ case 'IfStatement': {
             callFunction,
             onAssignment,
             onConsoleOutput,
+            onOperation,
           )
         }
       }
@@ -633,6 +663,7 @@ case 'IfStatement': {
               callFunction,
               onAssignment,
               onConsoleOutput,
+              onOperation,
             )
 
         throw new ReturnSignal(
