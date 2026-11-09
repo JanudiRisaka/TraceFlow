@@ -5,6 +5,8 @@ import {
   ExecutionRecorder,
   toRuntimeValueSnapshot,
 } from './ExecutionRecorder'
+import { RESOURCE_LIMITS } from '../resourceLimits'
+import { ResourceLimitError } from '../ResourceLimitError'
 
 describe('ExecutionRecorder', () => {
   it('records an event with an automatically assigned index', () => {
@@ -157,4 +159,30 @@ describe('toRuntimeValueSnapshot', () => {
 
     expect(Object.isFrozen(event.value)).toBe(true)
     })
+
+    it('enforces the maximum execution event limit', () => {
+  const recorder = new ExecutionRecorder()
+
+  for (let i = 0; i < RESOURCE_LIMITS.maxExecutionEvents; i++) {
+    recorder.record({
+      type: 'program-start',
+      location: null,
+    })
+  }
+
+  expect(recorder.getEvents()).toHaveLength(
+    RESOURCE_LIMITS.maxExecutionEvents,
+  )
+
+  expect(() => {
+    recorder.record({
+      type: 'program-complete',
+      location: null,
+    })
+  }).toThrow(ResourceLimitError)
+
+  expect(recorder.getEvents()).toHaveLength(
+    RESOURCE_LIMITS.maxExecutionEvents,
+  )
+})
 })

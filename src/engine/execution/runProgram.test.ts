@@ -1,6 +1,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { runProgram } from './runProgram'
+import { RESOURCE_LIMITS } from '../resourceLimits'
 
 describe('runProgram', () => {
   it('executes valid JavaScript successfully', () => {
@@ -318,5 +319,62 @@ it('preserves active function scopes and local variables when a runtime error oc
     ).toEqual({ type: 'number', value: 20 })
   }
 })
+
+
+it('stops execution when the event limit is reached', () => {
+  const source = `
+    for (let i = 0; i < 3000; i++) {
+    }
+  `
+
+  const result = runProgram(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(result.error.phase).toBe('runtime')
+
+    if (result.error.phase === 'runtime') {
+      expect(result.error.code).toBe('EXECUTION_LIMIT_EXCEEDED')
+    }
+
+    expect(result.events).toHaveLength(
+      RESOURCE_LIMITS.maxExecutionEvents,
+    )
+
+    expect(result.snapshots).toHaveLength(
+      RESOURCE_LIMITS.maxSnapshots,
+    )
+
+    expect(result.events).not.toHaveLength(
+      RESOURCE_LIMITS.maxExecutionEvents + 1,
+    )
+  }
+})
+
+
+it('stops execution when the console output limit is reached', () => {
+  const source = Array.from(
+    { length: RESOURCE_LIMITS.maxConsoleEntries + 1 },
+    (_, index) => `console.log(${index});`,
+  ).join('\n')
+
+  const result = runProgram(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(result.error.phase).toBe('runtime')
+
+    if (result.error.phase === 'runtime') {
+      expect(result.error.code).toBe('EXECUTION_LIMIT_EXCEEDED')
+    }
+
+    expect(result.output).toHaveLength(
+      RESOURCE_LIMITS.maxConsoleEntries,
+    )
+  }
+})
+
 
 })

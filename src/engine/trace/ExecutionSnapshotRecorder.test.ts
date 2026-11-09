@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import { Environment } from '../runtime/Environment'
 import { createNumber, createString } from '../runtime/value'
 import { ExecutionSnapshotRecorder } from './ExecutionSnapshotRecorder'
+import { RESOURCE_LIMITS } from '../resourceLimits'
+import { ResourceLimitError } from '../ResourceLimitError'
 
 describe('ExecutionSnapshotRecorder', () => {
   it('captures a global environment', () => {
@@ -195,4 +197,32 @@ describe('ExecutionSnapshotRecorder', () => {
     expect(next.index).toBe(0)
     expect(next.scopes[0].scopeId).toBe(1)
   })
+
+
+it('enforces the maximum snapshot limit', () => {
+  const environment = new Environment()
+  const recorder = new ExecutionSnapshotRecorder()
+
+  for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots; i++) {
+    recorder.capture(i, 'running', environment, [])
+  }
+
+  expect(recorder.getSnapshots()).toHaveLength(
+    RESOURCE_LIMITS.maxSnapshots,
+  )
+
+  expect(() => {
+    recorder.capture(
+      RESOURCE_LIMITS.maxSnapshots,
+      'running',
+      environment,
+      [],
+    )
+  }).toThrow(ResourceLimitError)
+
+  expect(recorder.getSnapshots()).toHaveLength(
+    RESOURCE_LIMITS.maxSnapshots,
+  )
+})
+
 })

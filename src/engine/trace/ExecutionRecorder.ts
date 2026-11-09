@@ -7,6 +7,9 @@ import type { RuntimeValue } from '../runtime/value'
 
 import type { RuntimeValueSnapshot } from './types'
 
+import { RESOURCE_LIMITS } from '../resourceLimits'
+import { ResourceLimitError } from '../ResourceLimitError'
+
 // Remove the index from event inputs.
 // The recorder assigns the index automatically.
 export type ExecutionEventInput =
@@ -31,23 +34,31 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
+
 export class ExecutionRecorder {
   private events: ExecutionEvent[] = []
 
-    record(event: ExecutionEventInput): ExecutionEvent {
-  const recordedEvent = deepFreeze({
-    ...event,
-    location:
-      event.location === null
-        ? null
-        : { ...event.location },
-    index: this.events.length,
-  }) as ExecutionEvent
+  record(event: ExecutionEventInput): ExecutionEvent {
+    // Check the event limit before recording.
+    if (this.events.length >= RESOURCE_LIMITS.maxExecutionEvents) {
+      throw new ResourceLimitError(
+        `Execution stopped: the event limit of ${RESOURCE_LIMITS.maxExecutionEvents} was reached.`,
+      )
+    }
 
-  this.events.push(recordedEvent)
+    const recordedEvent = deepFreeze({
+      ...event,
+      location:
+        event.location === null
+          ? null
+          : { ...event.location },
+      index: this.events.length,
+    }) as ExecutionEvent
 
-  return recordedEvent
-}
+    this.events.push(recordedEvent)
+
+    return recordedEvent
+  }
 
   getEvents(): ExecutionEvent[] {
     return [...this.events]
@@ -57,6 +68,7 @@ export class ExecutionRecorder {
     this.events = []
   }
 }
+
 
 // Convert interpreter values into serializable trace values.
 export function toRuntimeValueSnapshot(

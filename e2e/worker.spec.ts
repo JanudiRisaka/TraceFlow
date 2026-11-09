@@ -127,7 +127,7 @@ test('keeps the main thread responsive during Worker execution', async ({ page }
         .run(`
           let total = 0
 
-          for (let i = 0; i < 2000; i++) {
+          for (let i = 0; i < 500; i++) {
             total = total + 1
           }
         `)
@@ -153,7 +153,10 @@ test('keeps the main thread responsive during Worker execution', async ({ page }
   })
 
   expect(result.executionStillPending).toBe(true)
-  expect(result.executionResult.ok).toBe(true)
+  expect(
+    result.executionResult.ok,
+    JSON.stringify(result.executionResult),
+  ).toBe(true)
 })
 
 

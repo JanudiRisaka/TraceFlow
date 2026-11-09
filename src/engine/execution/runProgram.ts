@@ -10,6 +10,7 @@ import {
 
 import type { ExecutionEventInput } from '../trace/ExecutionRecorder'
 import type { ProgramExecutionResult } from './types'
+import { ResourceLimitError } from '../ResourceLimitError'
 
 export function runProgram(source: string): ProgramExecutionResult {
   const context = createExecutionContext()
@@ -52,7 +53,7 @@ export function runProgram(source: string): ProgramExecutionResult {
     }
   }
 
-  // Record the beginning of execution.
+  try {
   const startEvent: ExecutionEventInput = {
     type: 'program-start',
     location: null,
@@ -67,8 +68,7 @@ export function runProgram(source: string): ProgramExecutionResult {
     context.errorCallStack ?? context.callStack,
   )
 
-  try {
-    // Stage 3: Execute each top-level statement in order.
+  // Stage 3: Execute each top-level statement in order.
     for (const statement of parseResult.ast.body) {
       executeStatement(
         statement as Statement,
@@ -106,27 +106,40 @@ export function runProgram(source: string): ProgramExecutionResult {
         : 'An unknown error occurred during execution.'
 
     const code =
-      error instanceof RuntimeError
+    error instanceof ResourceLimitError
+      ? error.code
+      : error instanceof RuntimeError
         ? error.code
         : 'UNKNOWN_RUNTIME_ERROR'
 
-    // Record the execution failure.
-    const errorEvent: ExecutionEventInput = {
-      type: 'execution-error',
-      location: null,
-      message,
-      code,
+    // Record the execution failure only if this wasn't
+    // already a resource-limit error.
+    if (!(error instanceof ResourceLimitError)) {
+      try {
+        const errorEvent: ExecutionEventInput = {
+          type: 'execution-error',
+          location: null,
+          message,
+          code,
+        }
+
+        const recordedError = context.eventRecorder.record(errorEvent)
+
+        context.snapshotRecorder.capture(
+          recordedError.index,
+          'error',
+          environment,
+          context.errorCallStack ?? context.callStack,
+          context.errorEnvironments ?? [],
+        )
+      } catch (recordingError: unknown) {
+        // Preserve the original error if recording the error
+        // itself reaches a resource limit.
+        if (!(recordingError instanceof ResourceLimitError)) {
+          throw recordingError
+        }
+      }
     }
-
-    const recordedError = context.eventRecorder.record(errorEvent)
-
-    context.snapshotRecorder.capture(
-      recordedError.index,
-      'error',
-      environment,
-      context.errorCallStack ?? context.callStack,
-      context.errorEnvironments ?? [],
-    )
 
     return {
       ok: false,

@@ -2,6 +2,8 @@
 import type { Environment } from '../runtime/Environment'
 import type { ExecutionSnapshot, CallFrameSnapshot, ExecutionStatus, ScopeSnapshot } from './types'
 import { toRuntimeValueSnapshot } from './ExecutionRecorder'
+import { RESOURCE_LIMITS } from '../resourceLimits'
+import { ResourceLimitError } from '../ResourceLimitError'
 
 function cloneSnapshot(
   snapshot: ExecutionSnapshot,
@@ -97,6 +99,12 @@ capture(
   callStack: CallFrameSnapshot[],
   additionalEnvironments: Environment[] = [],
 ): ExecutionSnapshot {
+  if (this.snapshots.length >= RESOURCE_LIMITS.maxSnapshots) {
+    throw new ResourceLimitError(
+      `Execution stopped: the snapshot limit of ${RESOURCE_LIMITS.maxSnapshots} was reached.`,
+    )
+  }
+
   const snapshot: ExecutionSnapshot = {
     index: this.snapshots.length,
     eventIndex,
