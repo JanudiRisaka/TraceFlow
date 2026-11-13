@@ -1,7 +1,7 @@
-
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { runProgram } from './runProgram'
 import { RESOURCE_LIMITS } from '../resourceLimits'
+import * as parser from '../parser/parse'
 
 describe('runProgram', () => {
   it('executes valid JavaScript successfully', () => {
@@ -427,5 +427,31 @@ it('rejects string concatenation exceeding the configured limit', () => {
       expect(result.error.code).toBe('EXECUTION_LIMIT_EXCEEDED')
     }
   }
+})
+
+it('does not expose unexpected parser exception messages', () => {
+  vi.spyOn(parser, 'parseJavaScript').mockImplementation(() => {
+    throw new Error('Internal implementation details')
+  })
+
+  const result = runProgram('let score = 10')
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(result.error.phase).toBe('runtime')
+    expect(result.error.message).toBe(
+      'An unexpected error occurred during program execution.',
+    )
+    expect(result.error.message).not.toContain(
+      'Internal implementation details',
+    )
+
+    if (result.error.phase === 'runtime') {
+      expect(result.error.code).toBe('UNKNOWN_RUNTIME_ERROR')
+    }
+  }
+
+  vi.restoreAllMocks()
 })
 })

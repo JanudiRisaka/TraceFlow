@@ -1,3 +1,4 @@
+
 import type { Statement } from 'acorn'
 
 import { parseJavaScript } from '../parser/parse'
@@ -19,56 +20,56 @@ export function runProgram(source: string): ProgramExecutionResult {
     name: 'Global',
   })
 
-  // Stage 1: Parse the source code.
-  const parseResult = parseJavaScript(source)
-
-  if (parseResult.ok === false) {
-    return {
-      ok: false,
-      error: {
-        phase: 'parse',
-        message: parseResult.error.message,
-        details: parseResult.error,
-      },
-      events: [],
-      snapshots: [],
-      output: [],
-    }
-  }
-
-  // Stage 2: Reject syntax the interpreter does not support.
-  const validationResult = validateJavaScript(parseResult.ast)
-
-  if (validationResult.ok === false) {
-    return {
-      ok: false,
-      error: {
-        phase: 'validation',
-        message: 'The program contains unsupported JavaScript syntax.',
-        details: validationResult.diagnostics,
-      },
-      events: [],
-      snapshots: [],
-      output: [],
-    }
-  }
-
   try {
-  const startEvent: ExecutionEventInput = {
-    type: 'program-start',
-    location: null,
-  }
+    // Stage 1: Parse the source code.
+    const parseResult = parseJavaScript(source)
 
-  const recordedStart = context.eventRecorder.record(startEvent)
+    if (parseResult.ok === false) {
+      return {
+        ok: false,
+        error: {
+          phase: 'parse',
+          message: parseResult.error.message,
+          details: parseResult.error,
+        },
+        events: [],
+        snapshots: [],
+        output: [],
+      }
+    }
 
-  context.snapshotRecorder.capture(
-    recordedStart.index,
-    'running',
-    environment,
-    context.errorCallStack ?? context.callStack,
-  )
+    // Stage 2: Reject syntax the interpreter does not support.
+    const validationResult = validateJavaScript(parseResult.ast)
 
-  // Stage 3: Execute each top-level statement in order.
+    if (validationResult.ok === false) {
+      return {
+        ok: false,
+        error: {
+          phase: 'validation',
+          message: 'The program contains unsupported JavaScript syntax.',
+          details: validationResult.diagnostics,
+        },
+        events: [],
+        snapshots: [],
+        output: [],
+      }
+    }
+
+    // Stage 3: Execute each top-level statement.
+    const startEvent: ExecutionEventInput = {
+      type: 'program-start',
+      location: null,
+    }
+
+    const recordedStart = context.eventRecorder.record(startEvent)
+
+    context.snapshotRecorder.capture(
+      recordedStart.index,
+      'running',
+      environment,
+      context.errorCallStack ?? context.callStack,
+    )
+
     for (const statement of parseResult.ast.body) {
       executeStatement(
         statement as Statement,
@@ -100,20 +101,23 @@ export function runProgram(source: string): ProgramExecutionResult {
       output: context.consoleOutputRecorder.getEntries(),
     }
   } catch (error: unknown) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'An unknown error occurred during execution.'
+    const isExpectedError =
+      error instanceof RuntimeError ||
+      error instanceof ResourceLimitError
+
+    const message = isExpectedError
+      ? error.message
+      : 'An unexpected error occurred during program execution.'
 
     const code =
-    error instanceof ResourceLimitError
-      ? error.code
-      : error instanceof RuntimeError
+      error instanceof ResourceLimitError
         ? error.code
-        : 'UNKNOWN_RUNTIME_ERROR'
+        : error instanceof RuntimeError
+          ? error.code
+          : 'UNKNOWN_RUNTIME_ERROR'
 
-    // Record the execution failure only if this wasn't
-    // already a resource-limit error.
+    // Record the execution failure unless a resource limit
+    // prevents further trace recording.
     if (!(error instanceof ResourceLimitError)) {
       try {
         const errorEvent: ExecutionEventInput = {
@@ -132,12 +136,9 @@ export function runProgram(source: string): ProgramExecutionResult {
           context.errorCallStack ?? context.callStack,
           context.errorEnvironments ?? [],
         )
-      } catch (recordingError: unknown) {
-        // Preserve the original error if recording the error
-        // itself reaches a resource limit.
-        if (!(recordingError instanceof ResourceLimitError)) {
-          throw recordingError
-        }
+      } catch {
+        // Do not expose or replace the original execution error
+        // if recording the error also fails.
       }
     }
 

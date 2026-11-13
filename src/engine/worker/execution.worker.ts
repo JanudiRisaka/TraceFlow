@@ -60,16 +60,12 @@ workerScope.onmessage = (event: MessageEvent<unknown>) => {
     }
 
     workerScope.postMessage(response)
-  } catch (error: unknown) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : 'An unexpected Worker error occurred.'
-
+    } catch {
     const response: ExecutionWorkerResponse = {
       type: 'fatal-error',
       requestId: validRequest.requestId,
-      message,
+      message:
+        'An unexpected error occurred while processing the execution.',
     }
 
     workerScope.postMessage(response)
