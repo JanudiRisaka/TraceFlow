@@ -1,5 +1,7 @@
 import type { FunctionDeclaration } from 'acorn'
 import type { Environment } from './Environment'
+import { RESOURCE_LIMITS } from '../resourceLimits'
+import { ResourceLimitError } from '../ResourceLimitError'
 
 export type FunctionRuntimeValue = {
   type: 'function'
@@ -20,6 +22,12 @@ export function createNumber(value: number): RuntimeValue {
 }
 
 export function createString(value: string): RuntimeValue {
+  if (value.length > RESOURCE_LIMITS.maxStringLength) {
+    throw new ResourceLimitError(
+      `String length exceeds the maximum limit of ${RESOURCE_LIMITS.maxStringLength} characters.`,
+    )
+  }
+
   return { type: 'string', value }
 }
 

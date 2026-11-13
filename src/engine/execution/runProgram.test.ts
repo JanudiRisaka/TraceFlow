@@ -377,4 +377,55 @@ it('stops execution when the console output limit is reached', () => {
 })
 
 
+it('accepts a string literal exactly at the configured limit', () => {
+  const source = `let message = "${'a'.repeat(RESOURCE_LIMITS.maxStringLength)}";`
+
+  const result = runProgram(source)
+
+  expect(result.ok).toBe(true)
+})
+
+it('rejects a string literal exceeding the configured limit', () => {
+  const source = `let message = "${'a'.repeat(RESOURCE_LIMITS.maxStringLength + 1)}";`
+
+  const result = runProgram(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(result.error.phase).toBe('runtime')
+
+    if (result.error.phase === 'runtime') {
+      expect(result.error.code).toBe('EXECUTION_LIMIT_EXCEEDED')
+    }
+  }
+})
+
+it('accepts string concatenation exactly at the configured limit', () => {
+  const left = 'a'.repeat(5_000)
+  const right = 'b'.repeat(5_000)
+  const source = `let combined = "${left}" + "${right}";`
+
+  const result = runProgram(source)
+
+  expect(result.ok).toBe(true)
+})
+
+it('rejects string concatenation exceeding the configured limit', () => {
+  const left = 'a'.repeat(5_000)
+  const right = 'b'.repeat(5_001)
+  const source = `let combined = "${left}" + "${right}";`
+
+  const result = runProgram(source)
+
+  expect(result.ok).toBe(false)
+
+  if (result.ok === false) {
+    expect(result.error.phase).toBe('runtime')
+
+    if (result.error.phase === 'runtime') {
+      expect(result.error.code).toBe('EXECUTION_LIMIT_EXCEEDED')
+    }
+  }
+})
 })
