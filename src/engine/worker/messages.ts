@@ -1,4 +1,3 @@
-
 import type { ProgramExecutionResult } from '../execution/types'
 
 export type ExecutionWorkerRequest = {

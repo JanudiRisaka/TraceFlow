@@ -1,16 +1,15 @@
-
 import type { ProgramExecutionResult } from '../execution/types'
-
 import type {
   ExecutionWorkerRequest,
   ExecutionWorkerResponse,
 } from './messages'
+import { RESOURCE_LIMITS } from '../resourceLimits'
 
 type PendingExecution = {
   resolve: (result: ProgramExecutionResult) => void
   reject: (error: Error) => void
+  timeoutId: ReturnType<typeof setTimeout>
 }
-
 
 function isExecutionWorkerResponse(
   value: unknown,
@@ -85,6 +84,7 @@ worker.onmessage = (event: MessageEvent<unknown>) => {
     return
   }
 
+  clearTimeout(pending.timeoutId)
   this.pendingExecutions.delete(response.requestId)
 
   if (response.type === 'result') {
@@ -132,6 +132,7 @@ worker.onmessage = (event: MessageEvent<unknown>) => {
     this.worker = null
 
     for (const pending of this.pendingExecutions.values()) {
+      clearTimeout(pending.timeoutId)
       pending.reject(error)
     }
 
@@ -149,11 +150,25 @@ worker.onmessage = (event: MessageEvent<unknown>) => {
     }
 
     return new Promise((resolve, reject) => {
-      this.pendingExecutions.set(requestId, { resolve, reject })
+      const timeoutId = setTimeout(() => {
+        this.handleWorkerFailure(
+          worker,
+          new Error(
+            `Execution timed out after ${RESOURCE_LIMITS.executionTimeoutMs} ms.`,
+          ),
+        )
+      }, RESOURCE_LIMITS.executionTimeoutMs)
+
+      this.pendingExecutions.set(requestId, {
+        resolve,
+        reject,
+        timeoutId,
+      })
 
       try {
         worker.postMessage(request)
       } catch (error: unknown) {
+        clearTimeout(timeoutId)
         this.pendingExecutions.delete(requestId)
 
         reject(
@@ -172,6 +187,7 @@ worker.onmessage = (event: MessageEvent<unknown>) => {
     const error = new Error('Execution was cancelled.')
 
     for (const pending of this.pendingExecutions.values()) {
+      clearTimeout(pending.timeoutId)
       pending.reject(error)
     }
 

@@ -202,3 +202,65 @@ test('rejects malformed Worker requests with a valid request ID', async ({ page 
     message: 'The Worker received an invalid execution request.',
   })
 })
+
+
+test('terminates execution when the timeout is reached', async ({ page }) => {
+  await page.goto('/')
+
+  const result = await page.evaluate(async () => {
+    const workerStates: { terminated: boolean }[] = []
+
+    class UnresponsiveWorker {
+      onmessage: ((event: MessageEvent) => void) | null = null
+      onerror: ((event: ErrorEvent) => void) | null = null
+      onmessageerror: (() => void) | null = null
+
+      constructor() {
+        workerStates.push({ terminated: false })
+      }
+
+      postMessage() {
+        // Deliberately never respond.
+      }
+
+      terminate() {
+        workerStates[0].terminated = true
+      }
+    }
+
+    Object.defineProperty(window, 'Worker', {
+      configurable: true,
+      value: UnresponsiveWorker,
+    })
+
+    const modulePath = '/src/engine/worker/ExecutionWorkerClient.ts'
+    const { ExecutionWorkerClient } = await import(
+      /* @vite-ignore */ modulePath
+    )
+
+    const client = new ExecutionWorkerClient()
+
+    try {
+      let errorMessage = ''
+
+      try {
+        await client.run('let value = 10')
+      } catch (error) {
+        errorMessage =
+          error instanceof Error ? error.message : ''
+      }
+
+      return {
+        errorMessage,
+        workerTerminated: workerStates[0]?.terminated ?? false,
+      }
+    } finally {
+      client.terminate()
+    }
+  })
+
+  expect(result.errorMessage).toBe(
+    'Execution timed out after 3000 ms.',
+  )
+  expect(result.workerTerminated).toBe(true)
+})
