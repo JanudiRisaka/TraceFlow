@@ -135,5 +135,4 @@ it('rejects UTF-8 source code exceeding the maximum byte limit', () => {
     )
   }
 })
-
 })

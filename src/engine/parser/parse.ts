@@ -1,6 +1,7 @@
 import { parse, type Program } from 'acorn'
 import { RESOURCE_LIMITS } from '../resourceLimits'
 import { exceedsSourceSizeLimit } from '../sourceSize'
+import { isParserStackExhaustion } from './isParserStackExhaustion'
 
 export type ParseError = {
   message: string
@@ -39,23 +40,25 @@ export function parseJavaScript(source: string): ParseResult {
       locations: true,
     })
 
+
     return {
       ok: true,
       ast,
     }
   } catch (error: unknown) {
-    if (error instanceof SyntaxError) {
-      if (error.message.includes('Not enough stack space')) {
-        return {
-          ok: false,
-          error: {
-            message: 'Source code exceeds the parser nesting limit.',
-            position: null,
-            line: null,
-            column: null,
-          },
-        }
+    if (isParserStackExhaustion(error)) {
+      return {
+        ok: false,
+        error: {
+          message: 'Source code exceeds the parser nesting limit.',
+          position: null,
+          line: null,
+          column: null,
+        },
       }
+    }
+
+    if (error instanceof SyntaxError) {
       const parserError = error as SyntaxError & {
         pos?: number
         loc?: {
