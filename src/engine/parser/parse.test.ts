@@ -1,6 +1,6 @@
-
 import { describe, expect, it } from 'vitest'
 import { parseJavaScript } from './parse'
+import { RESOURCE_LIMITS } from '../resourceLimits'
 
 describe('parseJavaScript', () => {
     it('parses a variable declaration', () => {
@@ -64,14 +64,14 @@ describe('parseJavaScript', () => {
     })
 
     it('accepts source code at the maximum byte limit', () => {
-    const source = ' '.repeat(100 * 1024)
+    const source = ' '.repeat(RESOURCE_LIMITS.maxSourceBytes)
     const result = parseJavaScript(source)
 
     expect(result.ok).toBe(true)
     })
 
     it('rejects source code exceeding the maximum byte limit', () => {
-    const source = ' '.repeat((100 * 1024) + 1)
+    const source = ' '.repeat(RESOURCE_LIMITS.maxSourceBytes + 1)
     const result = parseJavaScript(source)
 
     expect(result.ok).toBe(false)
@@ -83,13 +83,39 @@ describe('parseJavaScript', () => {
     }
     })
 
-    it('measures source size using UTF-8 bytes', () => {
-    // Each character occupies 3 bytes in UTF-8.
-    const source = 'あ'.repeat(34_134)
-    const result = parseJavaScript(source)
 
-    expect(result.ok).toBe(false)
-    })
+it('accepts UTF-8 source code at the maximum byte limit', () => {
+  const maxBytes = RESOURCE_LIMITS.maxSourceBytes
+  const commentOverhead = 4 // /* and */
+  const contentBytes = maxBytes - commentOverhead
+
+  const source =
+    '/*' +
+    '€'.repeat(Math.floor(contentBytes / 3)) +
+    ' '.repeat(contentBytes % 3) +
+    '*/'
+
+  const result = parseJavaScript(source)
+
+  expect(result.ok).toBe(true)
+})
+
+it('rejects UTF-8 source code exceeding the maximum byte limit', () => {
+  const maxBytes = RESOURCE_LIMITS.maxSourceBytes
+  const commentOverhead = 4
+  const contentBytes = maxBytes - commentOverhead
+
+  const source =
+    '/*' +
+    '€'.repeat(Math.floor(contentBytes / 3)) +
+    ' '.repeat(contentBytes % 3) +
+    '*/ '
+
+  const result = parseJavaScript(source)
+
+  expect(result.ok).toBe(false)
+})
+
 
     it('returns an error for excessively nested expressions', () => {
   const source =

@@ -4,6 +4,7 @@ import type {
   ExecutionWorkerResponse,
 } from './messages'
 import { RESOURCE_LIMITS } from '../resourceLimits'
+import { exceedsSourceSizeLimit } from '../sourceSize'
 
 type PendingExecution = {
   resolve: (result: ProgramExecutionResult) => void
@@ -140,6 +141,14 @@ worker.onmessage = (event: MessageEvent<unknown>) => {
   }
 
   run(source: string): Promise<ProgramExecutionResult> {
+    if (exceedsSourceSizeLimit(source)) {
+      return Promise.reject(
+        new Error(
+          `Source code exceeds the maximum allowed size of ${RESOURCE_LIMITS.maxSourceBytes} bytes.`,
+        ),
+      )
+    }
+
     const worker = this.getWorker()
     const requestId = this.nextRequestId++
 

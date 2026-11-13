@@ -38,6 +38,21 @@ describe('ExecutionWorkerClient', () => {
     vi.unstubAllGlobals()
   })
 
+  it('rejects oversized source without creating a Worker', async () => {
+    const client = new ExecutionWorkerClient()
+
+    const oversizedSource =
+      ' '.repeat(RESOURCE_LIMITS.maxSourceBytes + 1)
+
+    await expect(client.run(oversizedSource)).rejects.toThrow(
+      `Source code exceeds the maximum allowed size of ${RESOURCE_LIMITS.maxSourceBytes} bytes.`,
+    )
+
+    expect(workers).toHaveLength(0)
+
+    client.terminate()
+  })
+
   it('terminates the Worker when execution exceeds the timeout', async () => {
     const client = new ExecutionWorkerClient()
 

@@ -60,19 +60,16 @@ export type ExecutionContext = {
   errorEnvironments: Environment[] | null
 }
 
-const DEFAULT_MAX_LOOP_ITERATIONS = 10_000
-const DEFAULT_MAX_FUNCTION_CALL_DEPTH = 100
-
 export function createExecutionContext(): ExecutionContext {
   return {
     operationCount: 0,
     maxOperations: RESOURCE_LIMITS.maxOperations,
 
     loopIterations: 0,
-    maxLoopIterations: DEFAULT_MAX_LOOP_ITERATIONS,
+    maxLoopIterations: RESOURCE_LIMITS.maxLoopIterations,
 
     functionCallDepth: 0,
-    maxFunctionCallDepth: DEFAULT_MAX_FUNCTION_CALL_DEPTH,
+    maxFunctionCallDepth: RESOURCE_LIMITS.maxFunctionCallDepth,
 
     eventRecorder: new ExecutionRecorder(),
     snapshotRecorder: new ExecutionSnapshotRecorder(),
