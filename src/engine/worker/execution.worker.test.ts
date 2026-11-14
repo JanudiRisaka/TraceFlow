@@ -249,4 +249,39 @@ describe('execution.worker', () => {
       result,
     })
   })
+
+  it('ignores non-object message payloads', async () => {
+    const workerScope = {
+      onmessage: null as
+        | ((event: MessageEvent<unknown>) => void)
+        | null,
+      postMessage: vi.fn(),
+    }
+
+    vi.stubGlobal('self', workerScope)
+
+    vi.doMock('../execution/runProgram', () => ({
+      runProgram: runProgramMock,
+    }))
+
+    await import('./execution.worker')
+
+    const invalidPayloads: unknown[] = [
+      null,
+      undefined,
+      'run',
+      123,
+      true,
+      [],
+    ]
+
+    for (const payload of invalidPayloads) {
+      workerScope.onmessage?.({
+        data: payload,
+      } as MessageEvent<unknown>)
+    }
+
+    expect(runProgramMock).not.toHaveBeenCalled()
+    expect(workerScope.postMessage).not.toHaveBeenCalled()
+  })
 })

@@ -66,7 +66,6 @@ const { ExecutionWorkerClient } = await import(
   }
 })
 
-
 test('cancels pending execution and can run again', async ({ page }) => {
   await page.goto('/')
 
@@ -106,8 +105,6 @@ test('cancels pending execution and can run again', async ({ page }) => {
   expect(result.cancellationMessage).toBe('Execution was cancelled.')
   expect(result.recoveryResult.ok).toBe(true)
 })
-
-
 
 test('keeps the main thread responsive during Worker execution', async ({ page }) => {
   await page.goto('/')
@@ -159,7 +156,6 @@ test('keeps the main thread responsive during Worker execution', async ({ page }
   ).toBe(true)
 })
 
-
 test('rejects malformed Worker requests with a valid request ID', async ({ page }) => {
   await page.goto('/')
 
@@ -202,7 +198,6 @@ test('rejects malformed Worker requests with a valid request ID', async ({ page 
     message: 'The Worker received an invalid execution request.',
   })
 })
-
 
 test('terminates execution when the timeout is reached', async ({ page }) => {
   await page.goto('/')
@@ -263,4 +258,77 @@ test('terminates execution when the timeout is reached', async ({ page }) => {
     'Execution timed out after 3000 ms.',
   )
   expect(result.workerTerminated).toBe(true)
+})
+
+test('ignores non-object messages in a real Web Worker', async ({ page }) => {
+  await page.goto('/')
+
+    const responses = await page.evaluate(async () => {
+      const worker = new Worker(
+        new URL('/src/engine/worker/execution.worker.ts', window.location.origin),
+        { type: 'module' },
+      )
+
+      try {
+        return await new Promise<unknown[]>((resolve, reject) => {
+          const receivedResponses: unknown[] = []
+
+          const timeout = window.setTimeout(() => {
+            worker.terminate()
+            reject(new Error('Worker did not respond to the valid request.'))
+          }, 5000)
+
+          worker.onmessage = (event: MessageEvent<unknown>) => {
+            receivedResponses.push(event.data)
+
+            if (
+              typeof event.data === 'object' &&
+              event.data !== null &&
+              'requestId' in event.data &&
+              event.data.requestId === 999
+            ) {
+              window.clearTimeout(timeout)
+              resolve(receivedResponses)
+            }
+          }
+
+          worker.onerror = (event) => {
+            window.clearTimeout(timeout)
+            reject(new Error(event.message))
+          }
+
+          const malformedPayloads: unknown[] = [
+            null,
+            undefined,
+            'run',
+            123,
+            true,
+            [],
+            { type: 'run', source: '1 + 1' },
+            { type: 'run', requestId: 0, source: '1 + 1' },
+          ]
+
+          for (const payload of malformedPayloads) {
+            worker.postMessage(payload)
+          }
+
+          worker.postMessage({
+            type: 'run',
+            requestId: 999,
+            source: '1 + 1',
+          })
+        })
+      } finally {
+        worker.terminate()
+      }
+    })
+
+    expect(responses).toHaveLength(1)
+    expect(responses[0]).toMatchObject({
+      type: 'result',
+      requestId: 999,
+      result: {
+        ok: true,
+      },
+    })
 })

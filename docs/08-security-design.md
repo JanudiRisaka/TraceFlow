@@ -120,13 +120,13 @@ The following records the current implementation and verification evidence. Revi
 
 The latest reported verification run completed successfully:
 
-- Vitest: 260 tests passed across 13 test files.
+- Vitest: 261 tests passed across 13 test files.
 - ESLint: passed.
 - TypeScript: passed.
 - Production build: passed.
-- Playwright: 6 end-to-end tests passed.
+- Playwright: 7 end-to-end tests passed.
 
-The Playwright tests cover Worker execution, runtime errors, cancellation, main-thread responsiveness, malformed request rejection and timeout handling.
+The Playwright tests cover Worker execution, runtime errors, cancellation, main-thread responsiveness, malformed request rejection (including non-object payloads) and timeout handling.
 
 The timeout test uses an unresponsive mock Worker to verify timeout rejection and termination. It does not simulate a real Worker executing an infinite loop.
 
