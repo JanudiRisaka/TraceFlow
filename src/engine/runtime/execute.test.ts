@@ -17,8 +17,6 @@ function executeSource(source: string, environment = new Environment(), context 
     throw new Error(`Invalid test JavaScript: ${parsed.error.message}`)
   }
 
-  context.maxLoopIterations = 3
-
   for (const statement of parsed.ast.body) {
     if (
       statement.type === 'ImportDeclaration' ||
@@ -46,8 +44,6 @@ function executeSourceWithContext(
   if (parsed.ok === false) {
     throw new Error(`Invalid test JavaScript: ${parsed.error.message}`)
   }
-
-  context.maxLoopIterations = 3
 
   for (const statement of parsed.ast.body) {
     if (
@@ -382,6 +378,29 @@ context.maxLoopIterations = 3
     }
   }).toThrow('loop iteration limit of 3 was reached')
 })
+
+  it('shares the iteration limit across sequential loops', () => {
+    const context = createExecutionContext()
+    context.maxLoopIterations = 5
+
+    expect(() => {
+      executeSource(
+        `
+          for (let i = 0; i < 3; i++) {
+            let a = i
+          }
+
+          for (let j = 0; j < 3; j++) {
+            let b = j
+          }
+        `,
+        new Environment(),
+        context,
+      )
+    }).toThrow('loop iteration limit of 5 was reached')
+
+    expect(context.loopIterations).toBe(5)
+  })
 
 it('counts operations inside function calls', () => {
   const context = createExecutionContext()
