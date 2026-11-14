@@ -59,6 +59,10 @@ export class Environment {
     )
   }
 
+  getOwnBindingCount(): number {
+    return this.bindings.size
+  }
+
   constructor(
     parent: Environment | null = null,
     metadata: ScopeMetadata = {

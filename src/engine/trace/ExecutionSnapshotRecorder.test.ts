@@ -1,5 +1,5 @@
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { Environment } from '../runtime/Environment'
 import { createNumber, createString } from '../runtime/value'
 import { ExecutionSnapshotRecorder } from './ExecutionSnapshotRecorder'
@@ -199,30 +199,160 @@ describe('ExecutionSnapshotRecorder', () => {
   })
 
 
-it('enforces the maximum snapshot limit', () => {
-  const environment = new Environment()
-  const recorder = new ExecutionSnapshotRecorder()
+  it('enforces the maximum snapshot limit', () => {
+    const environment = new Environment()
+    const recorder = new ExecutionSnapshotRecorder()
 
-  for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots; i++) {
-    recorder.capture(i, 'running', environment, [])
-  }
+    for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots; i++) {
+      recorder.capture(i, 'running', environment, [])
+    }
 
-  expect(recorder.getSnapshots()).toHaveLength(
-    RESOURCE_LIMITS.maxSnapshots,
-  )
-
-  expect(() => {
-    recorder.capture(
+    expect(recorder.getSnapshots()).toHaveLength(
       RESOURCE_LIMITS.maxSnapshots,
+    )
+
+    expect(() => {
+      recorder.capture(
+        RESOURCE_LIMITS.maxSnapshots,
+        'running',
+        environment,
+        [],
+      )
+    }).toThrow(ResourceLimitError)
+
+    expect(recorder.getSnapshots()).toHaveLength(
+      RESOURCE_LIMITS.maxSnapshots,
+    )
+  })
+
+  it('enforces the cumulative snapshot binding limit', () => {
+    const environment = new Environment()
+    const recorder = new ExecutionSnapshotRecorder()
+
+    // Create 20 bindings.
+    for (let i = 0; i < 20; i++) {
+      environment.declare(`value${i}`, 'let')
+    }
+
+    // Record 4,999 snapshots: 99,980 binding entries.
+    for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots - 1; i++) {
+      recorder.capture(i, 'running', environment, [])
+    }
+
+    // Add one more binding.
+    environment.declare('extra', 'let')
+
+    // 99,980 + 21 exceeds the 100,000 limit.
+    expect(() => {
+      recorder.capture(
+        RESOURCE_LIMITS.maxSnapshots - 1,
+        'running',
+        environment,
+        [],
+      )
+    }).toThrow(ResourceLimitError)
+
+    // Previously recorded history must remain intact.
+    expect(recorder.getSnapshots()).toHaveLength(
+      RESOURCE_LIMITS.maxSnapshots - 1,
+    )
+  })
+
+  it('includes additional environment bindings in the cumulative snapshot limit', () => {
+    const environment = new Environment()
+    const additionalEnvironment = new Environment()
+    const recorder = new ExecutionSnapshotRecorder()
+
+    // Create 20 bindings in the current environment.
+    for (let i = 0; i < 20; i++) {
+      environment.declare(`value${i}`, 'let')
+    }
+
+    // Record 4,999 snapshots: 99,980 binding entries.
+    for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots - 1; i++) {
+      recorder.capture(i, 'running', environment, [])
+    }
+
+    // The additional environment contributes one more binding.
+    additionalEnvironment.declare('additionalValue', 'let')
+
+    // 99,980 + 20 + 1 exceeds the 100,000 limit.
+    expect(() => {
+      recorder.capture(
+        RESOURCE_LIMITS.maxSnapshots - 1,
+        'running',
+        environment,
+        [],
+        [additionalEnvironment],
+      )
+    }).toThrow(ResourceLimitError)
+
+    expect(recorder.getSnapshots()).toHaveLength(
+      RESOURCE_LIMITS.maxSnapshots - 1,
+    )
+  })
+
+  it('does not count shared parent bindings twice in one snapshot', () => {
+    const parent = new Environment()
+    parent.declare('parentValue', 'let')
+
+    const environment = new Environment(parent)
+    environment.declare('currentValue', 'let')
+
+    const additionalEnvironment = new Environment(parent)
+    additionalEnvironment.declare('additionalValue', 'let')
+
+    const recorder = new ExecutionSnapshotRecorder()
+
+    const getOwnBindingCountSpy = vi.spyOn(
+      parent,
+      'getOwnBindingCount',
+    )
+
+    const snapshot = recorder.capture(
+      0,
       'running',
       environment,
       [],
+      [additionalEnvironment],
     )
-  }).toThrow(ResourceLimitError)
 
-  expect(recorder.getSnapshots()).toHaveLength(
-    RESOURCE_LIMITS.maxSnapshots,
-  )
-})
+    expect(getOwnBindingCountSpy).toHaveBeenCalledTimes(1)
 
+    // The shared parent should appear only once.
+    expect(
+      snapshot.scopes.filter((scope) => scope.name === 'Global'),
+    ).toHaveLength(1)
+
+    expect(
+      snapshot.scopes.reduce(
+        (total, scope) => total + scope.bindings.length,
+        0,
+      ),
+    ).toBe(3)
+  })
+
+  it('resets the cumulative binding count when cleared', () => {
+    const environment = new Environment()
+    const recorder = new ExecutionSnapshotRecorder()
+
+    for (let i = 0; i < 20; i++) {
+      environment.declare(`value${i}`, 'let')
+    }
+
+    for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots - 1; i++) {
+      recorder.capture(i, 'running', environment, [])
+    }
+
+    environment.declare('extra', 'let')
+
+    recorder.clear()
+
+    // The new execution starts with a fresh binding budget.
+    expect(() => {
+      recorder.capture(0, 'running', environment, [])
+    }).not.toThrow()
+
+    expect(recorder.getSnapshots()).toHaveLength(1)
+  })
 })

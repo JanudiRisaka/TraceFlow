@@ -266,8 +266,12 @@ function getScopeDepth(
 
   let depth = 0
   let parentId = scope.parentScopeId
+  const visitedScopeIds = new Set<number>([scopeId])
 
   while (parentId !== null) {
+    if (visitedScopeIds.has(parentId)) break
+
+    visitedScopeIds.add(parentId)
     depth += 1
 
     const parent = scopes.find(

@@ -154,4 +154,16 @@ describe('Environment', () => {
     },
   ])
 })
+
+it('returns the number of bindings declared in its own scope', () => {
+  const parent = new Environment()
+  parent.declare('parentValue', 'let')
+
+  const child = new Environment(parent)
+  child.declare('first', 'let')
+  child.declare('second', 'const')
+
+  expect(parent.getOwnBindingCount()).toBe(1)
+  expect(child.getOwnBindingCount()).toBe(2)
+})
 })

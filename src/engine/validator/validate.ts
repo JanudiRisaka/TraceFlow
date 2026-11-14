@@ -27,7 +27,7 @@ type AstNode = {
   [key: string]: unknown
 }
 
-// These are the AST node types TraceFlow currently plans to support.
+// These are the AST node types TraceFlow currently supports.
 const supportedNodeTypes = new Set([
   'Program',
   'VariableDeclaration',

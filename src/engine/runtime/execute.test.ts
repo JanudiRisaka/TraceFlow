@@ -322,6 +322,21 @@ it('throws when the operation limit is exceeded', () => {
   expect(context.operationCount).toBe(4)
 })
 
+it('enforces the operation limit while evaluating console.log arguments', () => {
+  const context = createExecutionContext()
+  context.maxOperations = 3
+
+  expect(() => {
+    executeSource(
+      'console.log(1, 2)',
+      new Environment(),
+      context,
+    )
+  }).toThrow('operation limit of 3 was reached')
+
+  expect(context.operationCount).toBe(4)
+  expect(context.consoleOutputRecorder.getEntries()).toHaveLength(0)
+})
 it('counts operations across loop iterations', () => {
   const context = createExecutionContext()
   context.maxOperations = 6

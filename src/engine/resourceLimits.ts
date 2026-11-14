@@ -14,6 +14,7 @@ export const RESOURCE_LIMITS = {
   // Execution history
   maxExecutionEvents: 5_000,
   maxSnapshots: 5_000,
+  maxSnapshotBindingEntries: 100_000,
 
   // Console output
   maxConsoleEntries: 500,

@@ -24,7 +24,7 @@ export function createNumber(value: number): RuntimeValue {
 export function createString(value: string): RuntimeValue {
   if (value.length > RESOURCE_LIMITS.maxStringLength) {
     throw new ResourceLimitError(
-      `String length exceeds the maximum limit of ${RESOURCE_LIMITS.maxStringLength} characters.`,
+      `String length exceeds the maximum limit of ${RESOURCE_LIMITS.maxStringLength} UTF-16 code units.`
     )
   }
 

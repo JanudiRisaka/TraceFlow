@@ -28,4 +28,25 @@ describe('createString', () => {
 
     expect(() => createString(value)).toThrow(ResourceLimitError)
   })
+
+  it('measures string length using UTF-16 code units', () => {
+    const value = '😀'.repeat(
+      RESOURCE_LIMITS.maxStringLength / 2,
+    )
+
+    expect(value.length).toBe(RESOURCE_LIMITS.maxStringLength)
+
+    expect(createString(value)).toEqual({
+      type: 'string',
+      value,
+    })
+  })
+
+  it('rejects an emoji string exceeding the UTF-16 code-unit limit', () => {
+  const value = '😀'.repeat(
+    RESOURCE_LIMITS.maxStringLength / 2 + 1,
+  )
+
+  expect(() => createString(value)).toThrow(ResourceLimitError)
+  })
 })
