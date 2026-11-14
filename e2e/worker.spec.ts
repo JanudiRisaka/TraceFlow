@@ -32,6 +32,43 @@ test('executes JavaScript in a real Web Worker', async ({ page }) => {
   }
 })
 
+test('returns parser nesting errors from a real Web Worker', async ({ page }) => {
+  await page.goto('/')
+
+  const result = await page.evaluate(async () => {
+    const modulePath = '/src/engine/worker/ExecutionWorkerClient.ts'
+    const { ExecutionWorkerClient } = await import(
+      /* @vite-ignore */ modulePath
+    )
+
+    const client = new ExecutionWorkerClient()
+
+    const source =
+      'let value = ' +
+      '('.repeat(5_000) +
+      '1' +
+      ')'.repeat(5_000) +
+      ';'
+
+    try {
+      return await client.run(source)
+    } finally {
+      client.terminate()
+    }
+  })
+
+  expect(result).toMatchObject({
+    ok: false,
+    error: {
+      phase: 'parse',
+      message: 'Source code exceeds the parser nesting limit.',
+    },
+    events: [],
+    snapshots: [],
+    output: [],
+  })
+})
+
 test('returns runtime errors from the Worker', async ({ page }) => {
   await page.goto('/')
 

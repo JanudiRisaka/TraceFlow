@@ -99,7 +99,6 @@ describe('validateJavaScript', () => {
     }
   })
 
-
   it('accepts console.log with a string argument', () => {
     const result = validateSource(`
       console.log("Hello");
@@ -169,46 +168,71 @@ describe('validateJavaScript', () => {
     expect(result.ok).toBe(false)
   })
 
+  it('accepts AST nesting at the configured depth limit', () => {
+    const source =
+      'let value = ' +
+      '!'.repeat(RESOURCE_LIMITS.maxAstDepth - 4) +
+      'true;'
 
-it('rejects AST nesting deeper than the configured limit', () => {
-  const source =
-    'let value = ' +
-    '!'.repeat(RESOURCE_LIMITS.maxAstDepth) +
-    'true;'
+    const result = validateSource(source)
 
-  const result = validateSource(source)
+    expect(result).toEqual({ ok: true })
+  })
 
-  expect(result.ok).toBe(false)
+  it('rejects AST nesting one level beyond the configured depth limit', () => {
+    const source =
+      'let value = ' +
+      '!'.repeat(RESOURCE_LIMITS.maxAstDepth - 3) +
+      'true;'
 
-  if (result.ok === false) {
-    expect(
-      result.diagnostics.some(
-        (diagnostic) =>
-          diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
-          diagnostic.message.includes('nesting depth'),
-      ),
-    ).toBe(true)
-  }
-})
+    const result = validateSource(source)
 
-it('rejects ASTs exceeding the configured node count', () => {
-  const source = Array.from(
-  { length: 5_001 },
-  (_, index) => `let value${index} = 0;`,
-).join('\n')
-  const result = validateSource(source)
+    expect(result.ok).toBe(false)
 
-  expect(result.ok).toBe(false)
+    if (result.ok === false) {
+      expect(
+        result.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
+            diagnostic.message.includes('nesting depth'),
+        ),
+      ).toBe(true)
+    }
+  })
 
-  if (result.ok === false) {
-    expect(
-      result.diagnostics.some(
-        (diagnostic) =>
-          diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
-          diagnostic.message.includes('node count'),
-      ),
-    ).toBe(true)
-  }
-})
+  it('accepts ASTs at the configured node count limit', () => {
+    const declarations = Array.from(
+      { length: 4_999 },
+      (_, index) => `let value${index} = 0;`,
+    )
 
+    declarations.push('let finalValue;')
+
+    const result = validateSource(declarations.join('\n'))
+
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('rejects ASTs exceeding the configured node count limit', () => {
+    const declarations = Array.from(
+      { length: 4_999 },
+      (_, index) => `let value${index} = 0;`,
+    )
+
+    declarations.push('let finalValue;', 'let extraValue;')
+
+    const result = validateSource(declarations.join('\n'))
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+      expect(
+        result.diagnostics.some(
+          (diagnostic) =>
+            diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
+            diagnostic.message.includes('node count'),
+        ),
+      ).toBe(true)
+    }
+  })
 })
