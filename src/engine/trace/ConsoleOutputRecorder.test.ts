@@ -91,4 +91,26 @@ describe('ConsoleOutputRecorder', () => {
       { type: 'number', value: 42 },
     ])
   })
+
+  it('does not allow returned locations to mutate recorded output', () => {
+    const recorder = new ConsoleOutputRecorder()
+
+    const entry = recorder.record([createNumber(42)], {
+      start: 0,
+      end: 10,
+      line: 1,
+      column: 0,
+    })
+
+    if (entry.location !== null) {
+      entry.location.start = 5
+    }
+
+    expect(recorder.getEntries()[0].location).toEqual({
+      start: 0,
+      end: 10,
+      line: 1,
+      column: 0,
+    })
+  })
 })

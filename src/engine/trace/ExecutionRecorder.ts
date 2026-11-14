@@ -34,6 +34,47 @@ function deepFreeze<T>(value: T): T {
   return value
 }
 
+function cloneEvent(event: ExecutionEventInput): ExecutionEventInput {
+  const location =
+    event.location === null ? null : { ...event.location }
+
+  switch (event.type) {
+    case 'variable-initialized':
+      return {
+        ...event,
+        location,
+        value: { ...event.value },
+      }
+
+    case 'variable-assigned':
+      return {
+        ...event,
+        location,
+        previousValue: { ...event.previousValue },
+        newValue: { ...event.newValue },
+      }
+
+    case 'function-return':
+      return {
+        ...event,
+        location,
+        value: { ...event.value },
+      }
+
+    case 'console-output':
+      return {
+        ...event,
+        location,
+        values: event.values.map((value) => ({ ...value })),
+      }
+
+    default:
+      return {
+        ...event,
+        location,
+      }
+  }
+}
 
 export class ExecutionRecorder {
   private events: ExecutionEvent[] = []
@@ -47,11 +88,7 @@ export class ExecutionRecorder {
     }
 
     const recordedEvent = deepFreeze({
-      ...event,
-      location:
-        event.location === null
-          ? null
-          : { ...event.location },
+      ...cloneEvent(event),
       index: this.events.length,
     }) as ExecutionEvent
 

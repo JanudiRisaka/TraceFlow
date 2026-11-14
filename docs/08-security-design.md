@@ -120,7 +120,7 @@ The following records the current implementation and verification evidence. Revi
 
 The latest reported verification run completed successfully:
 
-- Vitest: 248 tests passed across 13 test files.
+- Vitest: 254 tests passed across 13 test files.
 - ESLint: passed.
 - TypeScript: passed.
 - Production build: passed.
