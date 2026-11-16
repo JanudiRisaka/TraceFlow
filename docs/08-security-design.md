@@ -122,11 +122,11 @@ The latest reported verification run completed successfully:
 - ESLint: passed.
 - TypeScript: passed.
 - Production build: passed.
-- Playwright: 8 end-to-end tests passed.
+- Playwright: 8 end-to-end scenarios passed in each of Chromium, Firefox and WebKit (24 browser-specific executions).
 
-The Playwright tests cover Worker execution, runtime errors, cancellation, main-thread responsiveness, malformed request rejection (including non-object payloads) and timeout handling.
+The 8 Playwright scenarios run in Chromium, Firefox and WebKit. They cover Worker execution, parser nesting errors, runtime errors, cancellation, main-thread responsiveness, malformed request rejection (including non-object payloads) and timeout handling.
 
-The timeout test uses an unresponsive mock Worker to verify timeout rejection and termination. It does not simulate a real Worker executing an infinite loop.
+The timeout test uses an unresponsive mock Worker to verify timeout rejection and termination. It does not simulate a real worker executing an infinite loop.
 
 The interpreter's unbounded `for (;;)` loop test separately verifies that the configured loop-iteration limit stops execution.
 
