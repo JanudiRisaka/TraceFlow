@@ -175,6 +175,297 @@ describe('ExecutionWorkerClient', () => {
         client.terminate()
     })
 
+    it('matches concurrent executions when responses arrive out of order', async () => {
+        const client = new ExecutionWorkerClient()
+
+        const firstExecution = client.run('console.log(101)')
+        const secondExecution = client.run('console.log(202)')
+
+        expect(workers).toHaveLength(1)
+        expect(workers[0].postMessage).toHaveBeenCalledTimes(2)
+
+        expect(workers[0].postMessage).toHaveBeenNthCalledWith(
+            1,
+            expect.objectContaining({
+                type: 'run',
+                requestId: 1,
+                source: 'console.log(101)',
+            }),
+        )
+
+        expect(workers[0].postMessage).toHaveBeenNthCalledWith(
+            2,
+            expect.objectContaining({
+                type: 'run',
+                requestId: 2,
+                source: 'console.log(202)',
+            }),
+        )
+
+        // Deliver the second request's response first.
+        workers[0].onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 2,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [{
+                        index: 0,
+                        values: [{ type: 'number', value: 202 }],
+                        location: null,
+                    }],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        const secondResult = await secondExecution
+
+        expect(secondResult).toMatchObject({
+            ok: true,
+            output: [{
+                index: 0,
+                values: [{ type: 'number', value: 202 }],
+            }],
+        })
+
+        // Now deliver the first request's response.
+        workers[0].onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 1,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [{
+                        index: 0,
+                        values: [{ type: 'number', value: 101 }],
+                        location: null,
+                    }],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        const firstResult = await firstExecution
+
+        expect(firstResult).toMatchObject({
+            ok: true,
+            output: [{
+                index: 0,
+                values: [{ type: 'number', value: 101 }],
+            }],
+        })
+
+        expect(workers[0].terminate).not.toHaveBeenCalled()
+
+        client.terminate()
+    })
+
+    it('ignores responses with unknown request IDs', async () => {
+        const client = new ExecutionWorkerClient()
+
+        const execution = client.run('let value = 10')
+
+        expect(workers).toHaveLength(1)
+
+        // This response has a valid structure but no matching pending request.
+        workers[0].onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 999,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        expect(workers[0].terminate).not.toHaveBeenCalled()
+
+        // The actual response should still resolve the pending execution.
+        workers[0].onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 1,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        const result = await execution
+
+        expect(result.ok).toBe(true)
+        expect(workers[0].terminate).not.toHaveBeenCalled()
+
+        client.terminate()
+    })
+
+
+    it('ignores duplicate responses for an already completed request', async () => {
+        const client = new ExecutionWorkerClient()
+
+        const firstExecution = client.run('console.log(101)')
+
+        expect(workers).toHaveLength(1)
+
+        const firstResponse = {
+            type: 'result',
+            requestId: 1,
+            result: {
+                ok: true,
+                events: [],
+                snapshots: [],
+                output: [{
+                    index: 0,
+                    values: [{ type: 'number', value: 101 }],
+                    location: null,
+                }],
+            },
+        }
+
+        workers[0].onmessage?.({
+            data: firstResponse,
+        } as MessageEvent<unknown>)
+
+        const firstResult = await firstExecution
+
+        expect(firstResult).toMatchObject({
+            ok: true,
+            output: [{
+                values: [{ type: 'number', value: 101 }],
+            }],
+        })
+
+        // Start another execution, then resend the first response.
+        const secondExecution = client.run('console.log(202)')
+
+        workers[0].onmessage?.({
+            data: {
+                ...firstResponse,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [{
+                        index: 0,
+                        values: [{ type: 'number', value: 999 }],
+                        location: null,
+                    }],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        // The duplicate must not resolve or corrupt the second execution.
+        workers[0].onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 2,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [{
+                        index: 0,
+                        values: [{ type: 'number', value: 202 }],
+                        location: null,
+                    }],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        const secondResult = await secondExecution
+
+        expect(secondResult).toMatchObject({
+            ok: true,
+            output: [{
+                values: [{ type: 'number', value: 202 }],
+            }],
+        })
+
+        expect(workers[0].terminate).not.toHaveBeenCalled()
+
+        client.terminate()
+    })
+
+    it('ignores stale responses from a Worker after cancellation', async () => {
+        const client = new ExecutionWorkerClient()
+
+        const firstExecution = client.run('console.log(101)')
+        const oldWorker = workers[0]
+
+        expect(workers).toHaveLength(1)
+
+        client.terminate()
+
+        await expect(firstExecution).rejects.toThrow(
+            'Execution was cancelled.',
+        )
+
+        // A new execution must use a new Worker and request ID.
+        const secondExecution = client.run('console.log(202)')
+        const newWorker = workers[1]
+
+        expect(workers).toHaveLength(2)
+
+        // Simulate a late response from the cancelled Worker.
+        oldWorker.onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 1,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [{
+                        index: 0,
+                        values: [{ type: 'number', value: 101 }],
+                        location: null,
+                    }],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        // The new Worker must still resolve its own request.
+        newWorker.onmessage?.({
+            data: {
+                type: 'result',
+                requestId: 2,
+                result: {
+                    ok: true,
+                    events: [],
+                    snapshots: [],
+                    output: [{
+                        index: 0,
+                        values: [{ type: 'number', value: 202 }],
+                        location: null,
+                    }],
+                },
+            },
+        } as MessageEvent<unknown>)
+
+        const secondResult = await secondExecution
+
+        expect(secondResult).toMatchObject({
+            ok: true,
+            output: [{
+                values: [{ type: 'number', value: 202 }],
+            }],
+        })
+
+        expect(oldWorker.terminate).toHaveBeenCalledOnce()
+        expect(newWorker.terminate).not.toHaveBeenCalled()
+
+        client.terminate()
+    })
+
     it('clears the timeout after a successful response', async () => {
         const client = new ExecutionWorkerClient()
 

@@ -113,18 +113,16 @@ The following records the current implementation and verification evidence. Revi
 | Parser stack exhaustion | Tested | Recognized parser stack-exhaustion errors are converted into controlled parsing failures |
 | Console output immutability | Tested | Console recorder tests verify that returned entries cannot mutate recorded output |
 | Console output index integrity | Tested | Worker client test rejects non-sequential console output indexes |
-| Console output immutability | Tested | Recorder tests verify returned entries cannot mutate internally recorded output |
-| Console output index integrity | Tested | Worker client test rejects non-sequential console output indexes |
 
 ## 8. Test coverage
 
 The latest reported verification run completed successfully:
 
-- Vitest: 261 tests passed across 13 test files.
+- Vitest: 272 tests passed across 13 test files.
 - ESLint: passed.
 - TypeScript: passed.
 - Production build: passed.
-- Playwright: 7 end-to-end tests passed.
+- Playwright: 8 end-to-end tests passed.
 
 The Playwright tests cover Worker execution, runtime errors, cancellation, main-thread responsiveness, malformed request rejection (including non-object payloads) and timeout handling.
 
