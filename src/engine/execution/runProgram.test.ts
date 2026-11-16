@@ -484,3 +484,49 @@ it('does not expose unexpected parser exception messages', () => {
   vi.restoreAllMocks()
 })
 })
+describe('host capability isolation', () => {
+  it.each([
+    'eval("1 + 1");',
+    'Function("return 1")();',
+    'fetch("https://example.com");',
+  ])('rejects access to the host global in: %s', (source) => {
+    const result = runProgram(source)
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+      expect(result.error.phase).toBe('runtime')
+
+      if (result.error.phase === 'runtime') {
+        expect(result.error.code).toBe('UNDECLARED_VARIABLE')
+      }
+
+      expect(result.output).toHaveLength(0)
+    }
+  })
+
+  it.each([
+    'window.location;',
+    'document.cookie;',
+  ])('rejects host object access in: %s', (source) => {
+    const result = runProgram(source)
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+      expect(result.error.phase).toBe('validation')
+      expect(result.events).toHaveLength(0)
+      expect(result.snapshots).toHaveLength(0)
+      expect(result.output).toHaveLength(0)
+
+      if (result.error.phase === 'validation') {
+        expect(
+          result.error.details.some(
+            (diagnostic) =>
+              diagnostic.code === 'UNSUPPORTED_FEATURE',
+          ),
+        ).toBe(true)
+      }
+    }
+  })
+})
