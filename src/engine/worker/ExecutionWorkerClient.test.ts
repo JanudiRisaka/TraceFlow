@@ -52,6 +52,28 @@ describe('ExecutionWorkerClient', () => {
         client.terminate()
     })
 
+    it('accepts source at the maximum byte limit', async () => {
+        const client = new ExecutionWorkerClient()
+
+        const source = ' '.repeat(RESOURCE_LIMITS.maxSourceBytes)
+
+        const execution = client.run(source)
+
+        expect(workers).toHaveLength(1)
+        expect(workers[0].postMessage).toHaveBeenCalledOnce()
+        expect(workers[0].postMessage).toHaveBeenCalledWith(
+            expect.objectContaining({
+                type: 'run',
+                requestId: expect.any(Number),
+                source,
+            }),
+        )
+
+        client.terminate()
+
+        await expect(execution).rejects.toThrow()
+    })
+
     it('terminates the Worker when execution exceeds the timeout', async () => {
         const client = new ExecutionWorkerClient()
 

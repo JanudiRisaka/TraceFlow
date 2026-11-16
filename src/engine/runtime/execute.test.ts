@@ -627,6 +627,38 @@ it('returns undefined when no return expression is provided', () => {
     }).toThrow('Only user-defined functions can be called.')
   })
 
+  it('allows function calls up to the configured depth limit', () => {
+    const context = createExecutionContext()
+    context.maxFunctionCallDepth = 3
+
+    const environment = executeSource(
+      `
+        function third() {
+          return 3;
+        }
+
+        function second() {
+          return third();
+        }
+
+        function first() {
+          return second();
+        }
+
+        let result = first();
+      `,
+      new Environment(),
+      context,
+    )
+
+    expect(environment.get('result')).toEqual({
+      type: 'number',
+      value: 3,
+    })
+
+    expect(context.functionCallDepth).toBe(0)
+  })
+
   it('enforces the function call depth limit', () => {
     const context = createExecutionContext()
     context.maxFunctionCallDepth = 3
@@ -644,6 +676,8 @@ it('returns undefined when no return expression is provided', () => {
         context,
       )
     }).toThrow('function call depth limit of 3 was reached')
+
+    expect(context.functionCallDepth).toBe(0)
   })
 
   it('records variable declaration and initialization events', () => {

@@ -40,6 +40,35 @@ describe('runProgram', () => {
     }
   })
 
+  it('returns an AST resource-limit error without executing the program', () => {
+    const source =
+      'let value = ' +
+      '!'.repeat(RESOURCE_LIMITS.maxAstDepth - 3) +
+      'true;'
+
+    const result = runProgram(source)
+
+    expect(result.ok).toBe(false)
+
+    if (result.ok === false) {
+      expect(result.error.phase).toBe('validation')
+
+      if (result.error.phase === 'validation') {
+        expect(
+          result.error.details.some(
+            (diagnostic) =>
+              diagnostic.code === 'RESOURCE_LIMIT_EXCEEDED' &&
+              diagnostic.message.includes('nesting depth'),
+          ),
+        ).toBe(true)
+      }
+
+      expect(result.events).toHaveLength(0)
+      expect(result.snapshots).toHaveLength(0)
+      expect(result.output).toHaveLength(0)
+    }
+  })
+
   it('records program start and completion events', () => {
     const result = runProgram('let x = 10;')
 

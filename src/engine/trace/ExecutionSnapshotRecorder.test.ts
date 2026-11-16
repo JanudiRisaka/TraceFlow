@@ -198,7 +198,6 @@ describe('ExecutionSnapshotRecorder', () => {
     expect(next.scopes[0].scopeId).toBe(1)
   })
 
-
   it('enforces the maximum snapshot limit', () => {
     const environment = new Environment()
     const recorder = new ExecutionSnapshotRecorder()
@@ -255,6 +254,25 @@ describe('ExecutionSnapshotRecorder', () => {
     // Previously recorded history must remain intact.
     expect(recorder.getSnapshots()).toHaveLength(
       RESOURCE_LIMITS.maxSnapshots - 1,
+    )
+  })
+
+  it('allows the exact cumulative snapshot binding limit', () => {
+    const environment = new Environment()
+    const recorder = new ExecutionSnapshotRecorder()
+
+    for (let i = 0; i < 20; i++) {
+      environment.declare(`value${i}`, 'let')
+    }
+
+    for (let i = 0; i < RESOURCE_LIMITS.maxSnapshots; i++) {
+      expect(() => {
+        recorder.capture(i, 'running', environment, [])
+      }).not.toThrow()
+    }
+
+    expect(recorder.getSnapshots()).toHaveLength(
+      RESOURCE_LIMITS.maxSnapshots,
     )
   })
 
